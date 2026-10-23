@@ -20,6 +20,7 @@
 #include "app_benchmark.h"
 #include "app_parity_lab.h"
 #include "app_ui.h"
+#include "app_ui_alarm.h"
 #include "audio_alarm.h"
 #include "bsp_shims.h"
 #include "connectivity.h"
@@ -40,6 +41,7 @@ static const uint32_t WEATHER_RETRY_INTERVAL_MS = 20000;
 static device_config_t s_device_config;
 static app_runtime_state_t s_runtime_state;
 static SemaphoreHandle_t s_runtime_mutex;
+static bool s_popup_visible = false;
 
 static void log_device_clock(const char *context)
 {
@@ -200,18 +202,25 @@ static void ui_heartbeat_task(void *arg)
     vTaskDelay(delay_ticks);
     uptime_seconds += 1;
 
-    /* Static, not on this task's 4 KB stack: the runtime state carries the
-     * full weather snapshot including the conditions summary. Only this
-     * task touches it. */
     static app_runtime_state_t runtime_snapshot;
     runtime_state_snapshot(&runtime_snapshot);
 
     if (bsp_display_lock(UI_HEARTBEAT_LOCK_TIMEOUT_MS) == ESP_OK) {
       app_ui_update_runtime(&s_device_config, &runtime_snapshot, uptime_seconds);
+
+      // Show/hide alarm popup
+      bool ringing = audio_alarm_is_ringing();
+      if (ringing && !s_popup_visible) {
+        show_alarm_ring_popup();
+        s_popup_visible = true;
+      } else if (!ringing && s_popup_visible) {
+        hide_alarm_ring_popup();
+        s_popup_visible = false;
+      }
+
       bsp_display_unlock();
     }
 
-    // Check alarm every second
     audio_alarm_check();
   }
 }
