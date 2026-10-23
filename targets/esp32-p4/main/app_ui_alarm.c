@@ -95,7 +95,7 @@ static lv_obj_t *create_ring_popup(lv_obj_t *parent) {
   lv_label_set_text(title, "Alarm!");
   lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 30);
   lv_obj_set_style_text_color(title, lv_color_white(), 0);
-  lv_obj_set_style_text_font(title, &lv_font_montserrat_28, 0);
+  lv_obj_set_style_text_font(title, &lv_font_montserrat_24, 0);
 
   lv_obj_t *sub = lv_label_create(s_ring_popup);
   lv_label_set_text(sub, "Time to wake up");
@@ -201,7 +201,6 @@ lv_obj_t *create_alarm_panel(lv_obj_t *parent) {
 
   refresh_alarm_buttons();
 
-  // Create the ringing popup as well
   create_ring_popup(parent);
 
   return s_alarm_panel;
