@@ -20,7 +20,7 @@
 #include "app_benchmark.h"
 #include "app_parity_lab.h"
 #include "app_ui.h"
-#include "audio_beep.h"
+#include "audio_alarm.h"
 #include "bsp_shims.h"
 #include "connectivity.h"
 #include "device_config.h"
@@ -210,6 +210,9 @@ static void ui_heartbeat_task(void *arg)
       app_ui_update_runtime(&s_device_config, &runtime_snapshot, uptime_seconds);
       bsp_display_unlock();
     }
+
+    // Check alarm every second
+    audio_alarm_check();
   }
 }
 
@@ -407,6 +410,7 @@ void app_main(void)
   runtime_state_seed();
   ESP_ERROR_CHECK(connectivity_prepare_runtime());
   ESP_ERROR_CHECK(message_service_init(&s_device_config));
+  ESP_ERROR_CHECK(audio_alarm_init());
 
   ESP_LOGI(
     TAG,
@@ -512,12 +516,4 @@ void app_main(void)
   if (weather_task_ok != pdPASS) {
     ESP_LOGW(TAG, "Failed to start weather service task");
   }
-
-  // Temporary beep test
-  ESP_LOGI(TAG, "Playing test beeps");
-  audio_beep_init();
-  vTaskDelay(pdMS_TO_TICKS(500));
-  audio_beep_play(800, 400);
-  vTaskDelay(pdMS_TO_TICKS(200));
-  audio_beep_play(1200, 400);
 }
