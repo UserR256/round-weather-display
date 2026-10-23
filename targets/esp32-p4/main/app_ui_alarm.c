@@ -81,8 +81,9 @@ static void snooze_event_cb(lv_event_t *e) {
   }
 }
 
-static lv_obj_t *create_ring_popup(lv_obj_t *parent) {
-  s_ring_popup = lv_obj_create(parent);
+static lv_obj_t *create_ring_popup(void) {
+  lv_obj_t *scr = lv_scr_act();
+  s_ring_popup = lv_obj_create(scr);
   lv_obj_set_size(s_ring_popup, 420, 260);
   lv_obj_center(s_ring_popup);
   lv_obj_set_style_bg_color(s_ring_popup, lv_color_hex(0x1a1a2e), 0);
@@ -201,7 +202,8 @@ lv_obj_t *create_alarm_panel(lv_obj_t *parent) {
 
   refresh_alarm_buttons();
 
-  create_ring_popup(parent);
+  // Create ringing popup on the active screen (not on the setup overlay)
+  create_ring_popup();
 
   return s_alarm_panel;
 }
