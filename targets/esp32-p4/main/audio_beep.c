@@ -5,6 +5,9 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "esp_codec_dev.h"
+#include "esp_codec_dev_defaults.h"
+#include "bsp/esp32_p4_wifi6_touch_lcd_xc.h"
 
 static const char *TAG = "audio_beep";
 
@@ -18,6 +21,7 @@ static const char *TAG = "audio_beep";
 #define AMPLITUDE      8000
 
 static i2s_chan_handle_t tx_handle = NULL;
+static esp_codec_dev_handle_t codec_dev = NULL;
 
 static void generate_tone(int16_t *buffer, size_t samples, float freq) {
   static float phase = 0;
@@ -39,6 +43,7 @@ esp_err_t audio_beep_init(void) {
   gpio_config(&io_conf);
   gpio_set_level(PIN_POWER_AMP, 1);
 
+  // I2S channel
   i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
   ESP_ERROR_CHECK(i2s_new_channel(&chan_cfg, &tx_handle, NULL));
 
@@ -61,12 +66,64 @@ esp_err_t audio_beep_init(void) {
   ESP_ERROR_CHECK(i2s_channel_init_std_mode(tx_handle, &std_cfg));
   ESP_ERROR_CHECK(i2s_channel_enable(tx_handle));
 
-  ESP_LOGI(TAG, "Audio beep initialized (raw I2S, no codec init)");
+  // Codec via BSP I2C
+  i2c_master_bus_handle_t i2c_bus = bsp_i2c_get_handle();
+  if (!i2c_bus) {
+    ESP_LOGE(TAG, "BSP I2C bus not available");
+    return ESP_FAIL;
+  }
+
+  audio_codec_i2c_cfg_t i2c_cfg = {
+    .port = I2C_NUM_0,
+    .addr = ES8311_CODEC_DEFAULT_ADDR,
+    .bus_handle = i2c_bus,
+  };
+  const audio_codec_ctrl_if_t *ctrl_if = audio_codec_new_i2c_ctrl(&i2c_cfg);
+
+  audio_codec_i2s_cfg_t i2s_cfg = {
+    .port = I2S_NUM_0,
+    .tx_handle = tx_handle,
+  };
+  const audio_codec_data_if_t *data_if = audio_codec_new_i2s_data(&i2s_cfg);
+
+  const audio_codec_gpio_if_t *gpio_if = audio_codec_new_gpio();
+
+  es8311_codec_cfg_t es8311_cfg = {
+    .ctrl_if = ctrl_if,
+    .gpio_if = gpio_if,
+    .codec_mode = ESP_CODEC_DEV_WORK_MODE_DAC,
+    .pa_pin = PIN_POWER_AMP,
+    .use_mclk = true,
+    .hw_gain.pa_voltage = 5.0,
+    .hw_gain.codec_dac_voltage = 3.3,
+  };
+  const audio_codec_if_t *codec_if = es8311_codec_new(&es8311_cfg);
+
+  esp_codec_dev_cfg_t dev_cfg = {
+    .dev_type = ESP_CODEC_DEV_TYPE_OUT,
+    .codec_if = codec_if,
+    .data_if = data_if,
+  };
+  codec_dev = esp_codec_dev_new(&dev_cfg);
+  if (!codec_dev) {
+    ESP_LOGE(TAG, "Failed to create codec device");
+    return ESP_FAIL;
+  }
+
+  esp_codec_dev_sample_info_t fs = {
+    .sample_rate = SAMPLE_RATE,
+    .channel = 2,
+    .bits_per_sample = 16,
+  };
+  ESP_ERROR_CHECK(esp_codec_dev_open(codec_dev, &fs));
+  ESP_ERROR_CHECK(esp_codec_dev_set_out_vol(codec_dev, 70));
+
+  ESP_LOGI(TAG, "ES8311 codec ready");
   return ESP_OK;
 }
 
 void audio_beep_play(int frequency_hz, int duration_ms) {
-  if (!tx_handle) return;
+  if (!codec_dev) return;
 
   const size_t samples_total = (SAMPLE_RATE * duration_ms) / 1000;
   const size_t chunk = 128;
@@ -76,13 +133,17 @@ void audio_beep_play(int frequency_hz, int duration_ms) {
   while (remaining > 0) {
     size_t to_gen = (remaining < chunk) ? remaining : chunk;
     generate_tone(buffer, to_gen, (float)frequency_hz);
-    size_t written = 0;
-    i2s_channel_write(tx_handle, buffer, to_gen * 2 * sizeof(int16_t), &written, portMAX_DELAY);
+    esp_codec_dev_write(codec_dev, buffer, to_gen * 2 * sizeof(int16_t));
     remaining -= to_gen;
   }
 }
 
 void audio_beep_deinit(void) {
+  if (codec_dev) {
+    esp_codec_dev_close(codec_dev);
+    esp_codec_dev_delete(codec_dev);
+    codec_dev = NULL;
+  }
   if (tx_handle) {
     i2s_channel_disable(tx_handle);
     i2s_del_channel(tx_handle);
