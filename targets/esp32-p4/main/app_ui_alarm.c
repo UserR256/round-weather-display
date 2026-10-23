@@ -1,4 +1,4 @@
-#include "app_ui.h"
+#include "app_ui_alarm.h"
 #include "audio_alarm.h"
 #include "lvgl.h"
 #include "esp_log.h"
@@ -6,8 +6,8 @@
 
 static const char *TAG = "ui_alarm";
 
-// These will be set by the main UI when the overlay is created
 static lv_obj_t *s_alarm_panel = NULL;
+static lv_obj_t *s_ring_popup = NULL;
 static lv_obj_t *s_hour_roller = NULL;
 static lv_obj_t *s_minute_roller = NULL;
 static lv_obj_t *s_enable_btn = NULL;
@@ -65,6 +65,64 @@ static void close_event_cb(lv_event_t *e) {
   }
 }
 
+static void stop_event_cb(lv_event_t *e) {
+  (void)e;
+  audio_alarm_stop();
+  if (s_ring_popup) {
+    lv_obj_add_flag(s_ring_popup, LV_OBJ_FLAG_HIDDEN);
+  }
+}
+
+static void snooze_event_cb(lv_event_t *e) {
+  (void)e;
+  audio_alarm_snooze();
+  if (s_ring_popup) {
+    lv_obj_add_flag(s_ring_popup, LV_OBJ_FLAG_HIDDEN);
+  }
+}
+
+static lv_obj_t *create_ring_popup(lv_obj_t *parent) {
+  s_ring_popup = lv_obj_create(parent);
+  lv_obj_set_size(s_ring_popup, 420, 260);
+  lv_obj_center(s_ring_popup);
+  lv_obj_set_style_bg_color(s_ring_popup, lv_color_hex(0x1a1a2e), 0);
+  lv_obj_set_style_radius(s_ring_popup, 24, 0);
+  lv_obj_set_style_border_width(s_ring_popup, 2, 0);
+  lv_obj_set_style_border_color(s_ring_popup, lv_color_hex(0xff6b6b), 0);
+  lv_obj_add_flag(s_ring_popup, LV_OBJ_FLAG_HIDDEN);
+
+  lv_obj_t *title = lv_label_create(s_ring_popup);
+  lv_label_set_text(title, "Alarm!");
+  lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 30);
+  lv_obj_set_style_text_color(title, lv_color_white(), 0);
+  lv_obj_set_style_text_font(title, &lv_font_montserrat_28, 0);
+
+  lv_obj_t *sub = lv_label_create(s_ring_popup);
+  lv_label_set_text(sub, "Time to wake up");
+  lv_obj_align(sub, LV_ALIGN_TOP_MID, 0, 75);
+  lv_obj_set_style_text_color(sub, lv_color_hex(0xaaaaaa), 0);
+
+  lv_obj_t *stop_btn = lv_btn_create(s_ring_popup);
+  lv_obj_set_size(stop_btn, 160, 50);
+  lv_obj_align(stop_btn, LV_ALIGN_BOTTOM_LEFT, 30, -30);
+  lv_obj_set_style_bg_color(stop_btn, lv_color_hex(0x4caf50), 0);
+  lv_obj_add_event_cb(stop_btn, stop_event_cb, LV_EVENT_CLICKED, NULL);
+  lv_obj_t *stop_label = lv_label_create(stop_btn);
+  lv_label_set_text(stop_label, "Stop");
+  lv_obj_center(stop_label);
+
+  lv_obj_t *snooze_btn = lv_btn_create(s_ring_popup);
+  lv_obj_set_size(snooze_btn, 160, 50);
+  lv_obj_align(snooze_btn, LV_ALIGN_BOTTOM_RIGHT, -30, -30);
+  lv_obj_set_style_bg_color(snooze_btn, lv_color_hex(0xff9800), 0);
+  lv_obj_add_event_cb(snooze_btn, snooze_event_cb, LV_EVENT_CLICKED, NULL);
+  lv_obj_t *snooze_label = lv_label_create(snooze_btn);
+  lv_label_set_text(snooze_label, "Snooze 10m");
+  lv_obj_center(snooze_label);
+
+  return s_ring_popup;
+}
+
 lv_obj_t *create_alarm_panel(lv_obj_t *parent) {
   audio_alarm_get(&s_edit_alarm);
 
@@ -81,7 +139,6 @@ lv_obj_t *create_alarm_panel(lv_obj_t *parent) {
   lv_obj_set_style_text_color(title, lv_color_white(), 0);
   lv_obj_set_style_text_font(title, &lv_font_montserrat_24, 0);
 
-  // Hour roller
   s_hour_roller = lv_roller_create(s_alarm_panel);
   char hours[24 * 4];
   char *p = hours;
@@ -94,7 +151,6 @@ lv_obj_t *create_alarm_panel(lv_obj_t *parent) {
   lv_obj_set_width(s_hour_roller, 80);
   lv_obj_align(s_hour_roller, LV_ALIGN_CENTER, -60, -20);
 
-  // Minute roller
   s_minute_roller = lv_roller_create(s_alarm_panel);
   char minutes[60 * 4];
   p = minutes;
@@ -113,7 +169,6 @@ lv_obj_t *create_alarm_panel(lv_obj_t *parent) {
   lv_obj_set_style_text_color(colon, lv_color_white(), 0);
   lv_obj_set_style_text_font(colon, &lv_font_montserrat_24, 0);
 
-  // Enable button
   s_enable_btn = lv_btn_create(s_alarm_panel);
   lv_obj_set_size(s_enable_btn, 180, 45);
   lv_obj_align(s_enable_btn, LV_ALIGN_BOTTOM_LEFT, 30, -80);
@@ -121,7 +176,6 @@ lv_obj_t *create_alarm_panel(lv_obj_t *parent) {
   lv_obj_t *en_label = lv_label_create(s_enable_btn);
   lv_obj_center(en_label);
 
-  // Type button
   s_type_btn = lv_btn_create(s_alarm_panel);
   lv_obj_set_size(s_type_btn, 180, 45);
   lv_obj_align(s_type_btn, LV_ALIGN_BOTTOM_RIGHT, -30, -80);
@@ -129,7 +183,6 @@ lv_obj_t *create_alarm_panel(lv_obj_t *parent) {
   lv_obj_t *type_label = lv_label_create(s_type_btn);
   lv_obj_center(type_label);
 
-  // Save button
   lv_obj_t *save_btn = lv_btn_create(s_alarm_panel);
   lv_obj_set_size(save_btn, 140, 40);
   lv_obj_align(save_btn, LV_ALIGN_BOTTOM_LEFT, 40, -20);
@@ -138,7 +191,6 @@ lv_obj_t *create_alarm_panel(lv_obj_t *parent) {
   lv_label_set_text(save_label, "Save");
   lv_obj_center(save_label);
 
-  // Close button
   lv_obj_t *close_btn = lv_btn_create(s_alarm_panel);
   lv_obj_set_size(close_btn, 140, 40);
   lv_obj_align(close_btn, LV_ALIGN_BOTTOM_RIGHT, -40, -20);
@@ -148,6 +200,10 @@ lv_obj_t *create_alarm_panel(lv_obj_t *parent) {
   lv_obj_center(close_label);
 
   refresh_alarm_buttons();
+
+  // Create the ringing popup as well
+  create_ring_popup(parent);
+
   return s_alarm_panel;
 }
 
@@ -159,5 +215,18 @@ void show_alarm_panel(void) {
     refresh_alarm_buttons();
     lv_obj_clear_flag(s_alarm_panel, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_foreground(s_alarm_panel);
+  }
+}
+
+void show_alarm_ring_popup(void) {
+  if (s_ring_popup) {
+    lv_obj_clear_flag(s_ring_popup, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(s_ring_popup);
+  }
+}
+
+void hide_alarm_ring_popup(void) {
+  if (s_ring_popup) {
+    lv_obj_add_flag(s_ring_popup, LV_OBJ_FLAG_HIDDEN);
   }
 }
