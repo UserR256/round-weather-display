@@ -19,5 +19,7 @@ typedef struct {
 esp_err_t audio_alarm_init(void);
 esp_err_t audio_alarm_set(const alarm_config_t *config);
 esp_err_t audio_alarm_get(alarm_config_t *config);
-void audio_alarm_check(void);  // Call periodically (e.g. every second)
+void audio_alarm_check(void);
 void audio_alarm_stop(void);
+void audio_alarm_snooze(void);   // Snooze for 10 minutes
+bool audio_alarm_is_ringing(void);
