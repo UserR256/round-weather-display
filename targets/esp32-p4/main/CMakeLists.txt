@@ -12,6 +12,7 @@ idf_component_register(
     "app_benchmark.c"
     "app_parity_lab.c"
     "app_ui.c"
+    "audio_beep.c"
     "connectivity.c"
     "device_config.c"
     "forecast_representative.c"
