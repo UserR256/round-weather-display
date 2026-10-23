@@ -30,7 +30,7 @@
 
 static const char *TAG = "rwd_esp32_p4";
 
-static const uint32_t UI_HEARTBEAT_LOCK_TIMEOUT_MS = 250;
+static const uint32_t UI_HEARTBEAT_LOCK_TIMEOUT_MS = 1000;
 static const uint32_t INITIAL_UI_LOCK_TIMEOUT_MS = 1000;
 static const uint32_t RUNTIME_LOCK_TIMEOUT_MS = 250;
 static const uint32_t WIFI_CONNECT_TIMEOUT_MS = 30000;
@@ -205,10 +205,10 @@ static void ui_heartbeat_task(void *arg)
     static app_runtime_state_t runtime_snapshot;
     runtime_state_snapshot(&runtime_snapshot);
 
-    if (bsp_display_lock(UI_HEARTBEAT_LOCK_TIMEOUT_MS) == ESP_OK) {
+    esp_err_t lock_err = bsp_display_lock(UI_HEARTBEAT_LOCK_TIMEOUT_MS);
+    if (lock_err == ESP_OK) {
       app_ui_update_runtime(&s_device_config, &runtime_snapshot, uptime_seconds);
 
-      // Show/hide alarm popup
       bool ringing = audio_alarm_is_ringing();
       if (ringing && !s_popup_visible) {
         show_alarm_ring_popup();
@@ -219,6 +219,8 @@ static void ui_heartbeat_task(void *arg)
       }
 
       bsp_display_unlock();
+    } else {
+      ESP_LOGW(TAG, "UI heartbeat lock timeout");
     }
 
     audio_alarm_check();
