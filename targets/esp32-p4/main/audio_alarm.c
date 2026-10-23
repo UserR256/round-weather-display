@@ -89,7 +89,6 @@ static void radio_task(void *arg) {
   while (s_ringing) {
     int len = esp_http_client_read(client, buffer, sizeof(buffer));
     if (len <= 0) break;
-    // TODO: MP3 decode + play
   }
 
   esp_http_client_close(client);
@@ -112,16 +111,10 @@ static void start_alarm_sound(void) {
 }
 
 static void stop_alarm_sound(void) {
+  // Only set the flag. The tasks will exit themselves cleanly.
+  // Do NOT call vTaskDelete from here — it runs from the LVGL event
+  // callback and can deadlock the LVGL lock.
   s_ringing = false;
-  if (s_radio_task) {
-    vTaskDelete(s_radio_task);
-    s_radio_task = NULL;
-  }
-  if (s_beep_task) {
-    vTaskDelete(s_beep_task);
-    s_beep_task = NULL;
-  }
-  audio_beep_deinit();
 }
 
 esp_err_t audio_alarm_init(void) {
@@ -153,7 +146,6 @@ void audio_alarm_check(void) {
   time_t now = time(NULL);
   if (now < 1704067200) return;
 
-  // Snooze active
   if (s_snooze_until > 0) {
     if (now >= s_snooze_until) {
       s_snooze_until = 0;
