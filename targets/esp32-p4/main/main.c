@@ -20,6 +20,7 @@
 #include "app_benchmark.h"
 #include "app_parity_lab.h"
 #include "app_ui.h"
+#include "audio_beep.h"
 #include "bsp_shims.h"
 #include "connectivity.h"
 #include "device_config.h"
@@ -382,7 +383,7 @@ static void weather_service_task(void *arg)
     runtime_state_update(true, true, false, &weather_snapshot, false, "");
     ESP_LOGI(
       TAG,
-      "Live weather updated (%d°, H:%d° L:%d°)",
+      "Live weather updated (%d\u00b0, H:%d\u00b0 L:%d\u00b0)",
       weather_snapshot.temp,
       weather_snapshot.high,
       weather_snapshot.low
@@ -511,4 +512,12 @@ void app_main(void)
   if (weather_task_ok != pdPASS) {
     ESP_LOGW(TAG, "Failed to start weather service task");
   }
+
+  // Temporary beep test
+  ESP_LOGI(TAG, "Playing test beeps");
+  audio_beep_init();
+  vTaskDelay(pdMS_TO_TICKS(500));
+  audio_beep_play(800, 400);
+  vTaskDelay(pdMS_TO_TICKS(200));
+  audio_beep_play(1200, 400);
 }
