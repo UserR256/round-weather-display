@@ -11,3 +11,5 @@ dependencies:
     version: "~2"
     rules:
       - if: "target == esp32p4"
+  espressif/es8311:
+    version: "*"
