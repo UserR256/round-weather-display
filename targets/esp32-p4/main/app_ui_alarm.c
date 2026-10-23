@@ -68,17 +68,13 @@ static void close_event_cb(lv_event_t *e) {
 static void stop_event_cb(lv_event_t *e) {
   (void)e;
   audio_alarm_stop();
-  if (s_ring_popup) {
-    lv_obj_add_flag(s_ring_popup, LV_OBJ_FLAG_HIDDEN);
-  }
+  // Popup hide is handled by the heartbeat task
 }
 
 static void snooze_event_cb(lv_event_t *e) {
   (void)e;
   audio_alarm_snooze();
-  if (s_ring_popup) {
-    lv_obj_add_flag(s_ring_popup, LV_OBJ_FLAG_HIDDEN);
-  }
+  // Popup hide is handled by the heartbeat task
 }
 
 static lv_obj_t *create_ring_popup(void) {
@@ -202,7 +198,6 @@ lv_obj_t *create_alarm_panel(lv_obj_t *parent) {
 
   refresh_alarm_buttons();
 
-  // Create ringing popup on the active screen (not on the setup overlay)
   create_ring_popup();
 
   return s_alarm_panel;
