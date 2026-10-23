@@ -2,11 +2,11 @@
 #include <math.h>
 #include "driver/i2s_std.h"
 #include "driver/gpio.h"
-#include "driver/i2c.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "es8311.h"
+#include "bsp/esp32_p4_wifi6_touch_lcd_xc.h"
 
 static const char *TAG = "audio_beep";
 
@@ -15,8 +15,6 @@ static const char *TAG = "audio_beep";
 #define PIN_I2S_BCLK   12
 #define PIN_I2S_LRCK   10
 #define PIN_I2S_DOUT   9
-#define PIN_I2C_SDA    7
-#define PIN_I2C_SCL    8
 
 #define SAMPLE_RATE    16000
 #define AMPLITUDE      8000
@@ -37,16 +35,11 @@ static void generate_tone(int16_t *buffer, size_t samples, float freq) {
 }
 
 static esp_err_t init_es8311(void) {
-  i2c_config_t conf = {
-    .mode = I2C_MODE_MASTER,
-    .sda_io_num = PIN_I2C_SDA,
-    .scl_io_num = PIN_I2C_SCL,
-    .sda_pullup_en = GPIO_PULLUP_ENABLE,
-    .scl_pullup_en = GPIO_PULLUP_ENABLE,
-    .master.clk_speed = 400000,
-  };
-  ESP_ERROR_CHECK(i2c_param_config(I2C_NUM_0, &conf));
-  ESP_ERROR_CHECK(i2c_driver_install(I2C_NUM_0, conf.mode, 0, 0, 0));
+  i2c_master_bus_handle_t i2c_bus = bsp_i2c_get_handle();
+  if (!i2c_bus) {
+    ESP_LOGE(TAG, "BSP I2C bus not available");
+    return ESP_FAIL;
+  }
 
   es_handle = es8311_create(I2C_NUM_0, ES8311_ADDRRES_0);
   if (!es_handle) {
@@ -67,7 +60,7 @@ static esp_err_t init_es8311(void) {
   ESP_ERROR_CHECK(es8311_voice_volume_set(es_handle, 80, NULL));
   ESP_ERROR_CHECK(es8311_microphone_config(es_handle, false));
 
-  ESP_LOGI(TAG, "ES8311 initialized");
+  ESP_LOGI(TAG, "ES8311 initialized via BSP I2C");
   return ESP_OK;
 }
 
@@ -134,6 +127,5 @@ void audio_beep_deinit(void) {
     es8311_delete(es_handle);
     es_handle = NULL;
   }
-  i2c_driver_delete(I2C_NUM_0);
   gpio_set_level(PIN_POWER_AMP, 0);
 }
