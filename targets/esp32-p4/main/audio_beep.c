@@ -5,8 +5,6 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "es8311.h"
-#include "bsp/esp32_p4_wifi6_touch_lcd_xc.h"
 
 static const char *TAG = "audio_beep";
 
@@ -20,7 +18,6 @@ static const char *TAG = "audio_beep";
 #define AMPLITUDE      8000
 
 static i2s_chan_handle_t tx_handle = NULL;
-static es8311_handle_t es_handle = NULL;
 
 static void generate_tone(int16_t *buffer, size_t samples, float freq) {
   static float phase = 0;
@@ -34,36 +31,6 @@ static void generate_tone(int16_t *buffer, size_t samples, float freq) {
   }
 }
 
-static esp_err_t init_es8311(void) {
-  i2c_master_bus_handle_t i2c_bus = bsp_i2c_get_handle();
-  if (!i2c_bus) {
-    ESP_LOGE(TAG, "BSP I2C bus not available");
-    return ESP_FAIL;
-  }
-
-  es_handle = es8311_create(I2C_NUM_0, ES8311_ADDRRES_0);
-  if (!es_handle) {
-    ESP_LOGE(TAG, "Failed to create ES8311 handle");
-    return ESP_FAIL;
-  }
-
-  const es8311_clock_config_t es_clk = {
-    .mclk_inverted = false,
-    .sclk_inverted = false,
-    .mclk_from_mclk_pin = true,
-    .mclk_frequency = SAMPLE_RATE * 256,
-    .sample_frequency = SAMPLE_RATE,
-  };
-
-  ESP_ERROR_CHECK(es8311_init(es_handle, &es_clk, ES8311_RESOLUTION_16, ES8311_RESOLUTION_16));
-  ESP_ERROR_CHECK(es8311_sample_frequency_config(es_handle, es_clk.mclk_frequency, es_clk.sample_frequency));
-  ESP_ERROR_CHECK(es8311_voice_volume_set(es_handle, 80, NULL));
-  ESP_ERROR_CHECK(es8311_microphone_config(es_handle, false));
-
-  ESP_LOGI(TAG, "ES8311 initialized via BSP I2C");
-  return ESP_OK;
-}
-
 esp_err_t audio_beep_init(void) {
   gpio_config_t io_conf = {
     .pin_bit_mask = (1ULL << PIN_POWER_AMP),
@@ -71,8 +38,6 @@ esp_err_t audio_beep_init(void) {
   };
   gpio_config(&io_conf);
   gpio_set_level(PIN_POWER_AMP, 1);
-
-  ESP_ERROR_CHECK(init_es8311());
 
   i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
   ESP_ERROR_CHECK(i2s_new_channel(&chan_cfg, &tx_handle, NULL));
@@ -96,7 +61,7 @@ esp_err_t audio_beep_init(void) {
   ESP_ERROR_CHECK(i2s_channel_init_std_mode(tx_handle, &std_cfg));
   ESP_ERROR_CHECK(i2s_channel_enable(tx_handle));
 
-  ESP_LOGI(TAG, "Audio beep initialized");
+  ESP_LOGI(TAG, "Audio beep initialized (raw I2S, no codec init)");
   return ESP_OK;
 }
 
@@ -122,10 +87,6 @@ void audio_beep_deinit(void) {
     i2s_channel_disable(tx_handle);
     i2s_del_channel(tx_handle);
     tx_handle = NULL;
-  }
-  if (es_handle) {
-    es8311_delete(es_handle);
-    es_handle = NULL;
   }
   gpio_set_level(PIN_POWER_AMP, 0);
 }
