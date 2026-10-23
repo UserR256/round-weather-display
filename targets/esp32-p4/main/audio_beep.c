@@ -2,7 +2,7 @@
 #include <math.h>
 #include "driver/i2s_std.h"
 #include "driver/gpio.h"
-#include "driver/i2c_master.h"
+#include "driver/i2c.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -23,7 +23,6 @@ static const char *TAG = "audio_beep";
 
 static i2s_chan_handle_t tx_handle = NULL;
 static es8311_handle_t es_handle = NULL;
-static i2c_master_bus_handle_t i2c_bus = NULL;
 
 static void generate_tone(int16_t *buffer, size_t samples, float freq) {
   static float phase = 0;
@@ -38,15 +37,16 @@ static void generate_tone(int16_t *buffer, size_t samples, float freq) {
 }
 
 static esp_err_t init_es8311(void) {
-  i2c_master_bus_config_t i2c_bus_cfg = {
-    .clk_source = I2C_CLK_SRC_DEFAULT,
-    .i2c_port = I2C_NUM_0,
-    .scl_io_num = PIN_I2C_SCL,
+  i2c_config_t conf = {
+    .mode = I2C_MODE_MASTER,
     .sda_io_num = PIN_I2C_SDA,
-    .glitch_ignore_cnt = 7,
-    .flags.enable_internal_pullup = true,
+    .scl_io_num = PIN_I2C_SCL,
+    .sda_pullup_en = GPIO_PULLUP_ENABLE,
+    .scl_pullup_en = GPIO_PULLUP_ENABLE,
+    .master.clk_speed = 400000,
   };
-  ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_bus_cfg, &i2c_bus));
+  ESP_ERROR_CHECK(i2c_param_config(I2C_NUM_0, &conf));
+  ESP_ERROR_CHECK(i2c_driver_install(I2C_NUM_0, conf.mode, 0, 0, 0));
 
   es_handle = es8311_create(I2C_NUM_0, ES8311_ADDRRES_0);
   if (!es_handle) {
@@ -134,9 +134,6 @@ void audio_beep_deinit(void) {
     es8311_delete(es_handle);
     es_handle = NULL;
   }
-  if (i2c_bus) {
-    i2c_del_master_bus(i2c_bus);
-    i2c_bus = NULL;
-  }
+  i2c_driver_delete(I2C_NUM_0);
   gpio_set_level(PIN_POWER_AMP, 0);
 }
