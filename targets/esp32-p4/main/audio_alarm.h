@@ -23,3 +23,9 @@ void audio_alarm_check(void);
 void audio_alarm_stop(void);
 void audio_alarm_snooze(void);
 bool audio_alarm_is_ringing(void);
+
+// Volume 0-100 for alarm sounds. Applies immediately; persist=true also writes
+// it to NVS (do that on slider release, not while dragging).
+void audio_alarm_set_volume(uint8_t volume, bool persist);
+uint8_t audio_alarm_get_volume(void);
+void audio_alarm_preview_volume(void);   // short confirmation beep, only when idle

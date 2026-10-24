@@ -20,10 +20,15 @@ static const char *TAG = "audio_beep";
 
 #define SAMPLE_RATE    44100
 #define AMPLITUDE      8000
-#define VOLUME         70
 
 static i2s_chan_handle_t tx_handle = NULL;
 static esp_codec_dev_handle_t codec_dev = NULL;
+static uint8_t s_volume = 70;   // 0-100
+
+void audio_beep_set_volume(uint8_t volume) {
+  s_volume = volume > 100 ? 100 : volume;
+  if (codec_dev) esp_codec_dev_set_out_vol(codec_dev, s_volume);
+}
 
 static void generate_tone(int16_t *buffer, size_t samples, float freq) {
   static float phase = 0;
@@ -50,7 +55,7 @@ esp_err_t audio_beep_set_format(int sample_rate, int channels) {
     ESP_LOGE(TAG, "reopen failed: %d", ret);
     return ESP_FAIL;
   }
-  esp_codec_dev_set_out_vol(codec_dev, VOLUME);
+  esp_codec_dev_set_out_vol(codec_dev, s_volume);
   return ESP_OK;
 }
 
@@ -181,7 +186,7 @@ esp_err_t audio_beep_init(void) {
     audio_release();
     return ESP_FAIL;
   }
-  esp_codec_dev_set_out_vol(codec_dev, VOLUME);
+  esp_codec_dev_set_out_vol(codec_dev, s_volume);
 
   ESP_LOGI(TAG, "ES8311 codec ready");
   return ESP_OK;
