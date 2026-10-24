@@ -11,10 +11,9 @@ typedef enum {
 
 typedef struct {
   bool enabled;
-  uint8_t hour;      // 0-23
-  uint8_t minute;    // 0-59
+  uint8_t hour;
+  uint8_t minute;
   alarm_type_t type;
-  uint8_t volume;    // 0-100
 } alarm_config_t;
 
 esp_err_t audio_alarm_init(void);
@@ -22,7 +21,5 @@ esp_err_t audio_alarm_set(const alarm_config_t *config);
 esp_err_t audio_alarm_get(alarm_config_t *config);
 void audio_alarm_check(void);
 void audio_alarm_stop(void);
-void audio_alarm_snooze(void);   // Snooze for 10 minutes
+void audio_alarm_snooze(void);
 bool audio_alarm_is_ringing(void);
-void audio_alarm_set_volume(uint8_t volume);
-uint8_t audio_alarm_get_volume(void);
