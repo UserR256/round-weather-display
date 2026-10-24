@@ -19,10 +19,10 @@ static const char *TAG = "audio_beep";
 
 #define SAMPLE_RATE    44100
 #define AMPLITUDE      8000
+#define VOLUME         70
 
 static i2s_chan_handle_t tx_handle = NULL;
 static esp_codec_dev_handle_t codec_dev = NULL;
-static uint8_t s_volume = 70;
 
 static void generate_tone(int16_t *buffer, size_t samples, float freq) {
   static float phase = 0;
@@ -33,13 +33,6 @@ static void generate_tone(int16_t *buffer, size_t samples, float freq) {
     buffer[i * 2 + 1] = sample;
     phase += step;
     if (phase > 2.0f * (float)M_PI) phase -= 2.0f * (float)M_PI;
-  }
-}
-
-void audio_beep_set_volume(uint8_t volume) {
-  s_volume = volume > 100 ? 100 : volume;
-  if (codec_dev) {
-    esp_codec_dev_set_out_vol(codec_dev, s_volume);
   }
 }
 
@@ -56,7 +49,7 @@ esp_err_t audio_beep_set_format(int sample_rate, int channels) {
     ESP_LOGE(TAG, "reopen failed: %d", ret);
     return ESP_FAIL;
   }
-  esp_codec_dev_set_out_vol(codec_dev, s_volume);
+  esp_codec_dev_set_out_vol(codec_dev, VOLUME);
   return ESP_OK;
 }
 
@@ -144,7 +137,7 @@ esp_err_t audio_beep_init(void) {
     .bits_per_sample = 16,
   };
   ESP_ERROR_CHECK(esp_codec_dev_open(codec_dev, &fs));
-  ESP_ERROR_CHECK(esp_codec_dev_set_out_vol(codec_dev, s_volume));
+  ESP_ERROR_CHECK(esp_codec_dev_set_out_vol(codec_dev, VOLUME));
 
   ESP_LOGI(TAG, "ES8311 codec ready");
   return ESP_OK;
@@ -161,14 +154,19 @@ void audio_beep_play(int frequency_hz, int duration_ms) {
   while (remaining > 0) {
     size_t to_gen = (remaining < chunk) ? remaining : chunk;
     generate_tone(buffer, to_gen, (float)frequency_hz);
-    esp_codec_dev_write(codec_dev, buffer, to_gen * 2 * sizeof(int16_t));
+    int ret = esp_codec_dev_write(codec_dev, buffer, to_gen * 2 * sizeof(int16_t));
+    if (ret != ESP_CODEC_DEV_OK) ESP_LOGE(TAG, "write failed: %d", ret);
     remaining -= to_gen;
   }
 }
 
 void audio_beep_write_pcm(const int16_t *pcm, size_t bytes) {
   if (!codec_dev || !pcm || bytes == 0) return;
-  esp_codec_dev_write(codec_dev, (void *)pcm, bytes);
+  int ret = esp_codec_dev_write(codec_dev, (void *)pcm, bytes);
+  if (ret != ESP_CODEC_DEV_OK) {
+    static int errs = 0;
+    if (errs++ < 10) ESP_LOGE(TAG, "pcm write failed: %d", ret);
+  }
 }
 
 void audio_beep_deinit(void) {
