@@ -284,6 +284,7 @@ static void stop_alarm_sound(void) {
 
 esp_err_t audio_alarm_init(void) {
   load_from_nvs();
+  audio_beep_prepare();
   audio_beep_set_volume(s_volume);
   ESP_LOGI(TAG, "Alarm loaded: %02d:%02d %s %s",
            s_alarm.hour, s_alarm.minute,

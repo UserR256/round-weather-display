@@ -1,6 +1,7 @@
 #include "audio_beep.h"
 #include <math.h>
 #include <stdbool.h>
+#include "esp_heap_caps.h"
 #include "driver/i2s_std.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
@@ -24,6 +25,7 @@ static const char *TAG = "audio_beep";
 static i2s_chan_handle_t tx_handle = NULL;
 static esp_codec_dev_handle_t codec_dev = NULL;
 static uint8_t s_volume = 70;   // 0-100
+static bool s_open = false;     // codec currently open (amp on)
 
 void audio_beep_set_volume(uint8_t volume) {
   s_volume = volume > 100 ? 100 : volume;
@@ -43,8 +45,9 @@ static void generate_tone(int16_t *buffer, size_t samples, float freq) {
 }
 
 esp_err_t audio_beep_set_format(int sample_rate, int channels) {
-  if (!codec_dev) return ESP_FAIL;
+  if (!codec_dev || !s_open) return ESP_FAIL;
   esp_codec_dev_close(codec_dev);
+  if (tx_handle) i2s_channel_enable(tx_handle);   // so the codec's disable-before-reconfigure succeeds
   esp_codec_dev_sample_info_t fs = {
     .sample_rate = sample_rate,
     .channel = channels,
@@ -84,11 +87,32 @@ static void audio_release(void) {
     i2s_del_channel(tx_handle);
     tx_handle = NULL;
   }
+  s_open = false;
   gpio_set_level(PIN_POWER_AMP, 0);
 }
 
 esp_err_t audio_beep_init(void) {
-  if (codec_dev) return ESP_OK;
+  if (codec_dev && s_open) return ESP_OK;
+
+  if (codec_dev) {
+    // Resources were kept from an earlier init (see audio_beep_deinit()), so the
+    // I2S DMA buffers are still allocated. Only reopen the codec.
+    gpio_set_level(PIN_POWER_AMP, 1);
+    if (tx_handle) i2s_channel_enable(tx_handle);
+    esp_codec_dev_sample_info_t again = {
+      .sample_rate = SAMPLE_RATE,
+      .channel = 2,
+      .bits_per_sample = 16,
+    };
+    if (esp_codec_dev_open(codec_dev, &again) != ESP_CODEC_DEV_OK) {
+      ESP_LOGE(TAG, "codec reopen failed");
+      audio_release();
+      return ESP_FAIL;
+    }
+    esp_codec_dev_set_out_vol(codec_dev, s_volume);
+    s_open = true;
+    return ESP_OK;
+  }
 
   gpio_config_t io_conf = {
     .pin_bit_mask = (1ULL << PIN_POWER_AMP),
@@ -102,7 +126,9 @@ esp_err_t audio_beep_init(void) {
   chan_cfg.dma_frame_num = 1000;
   chan_cfg.auto_clear    = true;
   if (i2s_new_channel(&chan_cfg, &tx_handle, NULL) != ESP_OK) {
-    ESP_LOGE(TAG, "i2s_new_channel failed");
+    ESP_LOGE(TAG, "i2s_new_channel failed (dma free %u, largest %u)",
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL));
     tx_handle = NULL;
     audio_release();
     return ESP_FAIL;
@@ -125,7 +151,9 @@ esp_err_t audio_beep_init(void) {
     },
   };
   if (i2s_channel_init_std_mode(tx_handle, &std_cfg) != ESP_OK) {
-    ESP_LOGE(TAG, "i2s std init failed");
+    ESP_LOGE(TAG, "i2s std init failed (dma free %u, largest %u)",
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL));
     audio_release();
     return ESP_FAIL;
   }
@@ -188,12 +216,13 @@ esp_err_t audio_beep_init(void) {
   }
   esp_codec_dev_set_out_vol(codec_dev, s_volume);
 
+  s_open = true;
   ESP_LOGI(TAG, "ES8311 codec ready");
   return ESP_OK;
 }
 
 void audio_beep_play(int frequency_hz, int duration_ms) {
-  if (!codec_dev) return;
+  if (!codec_dev || !s_open) return;
 
   const size_t samples_total = (SAMPLE_RATE * duration_ms) / 1000;
   const size_t chunk = 128;
@@ -210,7 +239,7 @@ void audio_beep_play(int frequency_hz, int duration_ms) {
 }
 
 void audio_beep_write_pcm(const int16_t *pcm, size_t bytes) {
-  if (!codec_dev || !pcm || bytes == 0) return;
+  if (!codec_dev || !s_open || !pcm || bytes == 0) return;
   int ret = esp_codec_dev_write(codec_dev, (void *)pcm, bytes);
   if (ret != ESP_CODEC_DEV_OK) {
     static int errs = 0;
@@ -218,6 +247,18 @@ void audio_beep_write_pcm(const int16_t *pcm, size_t bytes) {
   }
 }
 
+// Closes the codec (amp off) but keeps the I2S channel and its DMA buffers.
+// Re-allocating ~24 KB of DMA-capable internal RAM on every alarm failed once
+// the heap was fragmented; keeping it makes later alarms independent of that.
 void audio_beep_deinit(void) {
-  audio_release();
+  if (codec_dev && s_open) {
+    esp_codec_dev_close(codec_dev);
+    s_open = false;
+  }
+  gpio_set_level(PIN_POWER_AMP, 0);
+}
+
+// Allocates everything now, while memory is plentiful, then powers down again.
+void audio_beep_prepare(void) {
+  if (audio_beep_init() == ESP_OK) audio_beep_deinit();
 }
