@@ -9,13 +9,20 @@
 #include "nvs.h"
 #include "esp_http_client.h"
 #include "esp_crt_bundle.h"
+#include "esp_timer.h"
 
 #define MINIMP3_IMPLEMENTATION
 #include "minimp3.h"
 
+#include "esp_heap_caps.h"
+
+#define RADIO_STACK_SIZE 24576
+static StaticTask_t s_radio_tcb;            // task control block, must be internal RAM
+static StackType_t *s_radio_stack = NULL;   // the stack itself, lives in PSRAM
+
 static const char *TAG = "audio_alarm";
 static const char *NVS_NAMESPACE = "alarm";
-static const char *RADIO_URL = "https://25483.live.streamtheworld.com/RADIO538.mp3";
+static const char *RADIO_URL = "http://25483.live.streamtheworld.com/RADIO538.mp3";
 
 static alarm_config_t s_alarm = {
   .enabled = false,
@@ -76,9 +83,18 @@ static void beep_task(void *arg) {
   vTaskDelete(NULL);
 }
 
+#define MP3_BUF_SIZE   8192
+#define MP3_REFILL_AT  4096
+#define STREAM_RATE    44100   // must match SAMPLE_RATE in audio_beep.c
+
 static void radio_task(void *arg) {
+
+
   (void)arg;
   ESP_LOGI(TAG, "Starting Radio 538");
+  ESP_LOGI(TAG, "free internal: %u, largest block: %u",
+         (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+         (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
 
   esp_http_client_config_t config = {
     .url = RADIO_URL,
@@ -86,19 +102,40 @@ static void radio_task(void *arg) {
     .crt_bundle_attach = esp_crt_bundle_attach,
   };
   esp_http_client_handle_t client = esp_http_client_init(&config);
-  if (esp_http_client_open(client, 0) != ESP_OK) {
-    ESP_LOGE(TAG, "Failed to open radio stream");
+
+  // Open the stream, following redirects manually (open() doesn't do it)
+  bool ok = false;
+  for (int attempt = 0; attempt < 5; attempt++) {
+    if (esp_http_client_open(client, 0) != ESP_OK) {
+      ESP_LOGE(TAG, "Failed to open radio stream");
+      vTaskDelay(1);   // always give IDLE1 a chance to run
+      break;
+    }
+    esp_http_client_fetch_headers(client);
+    int status = esp_http_client_get_status_code(client);
+    ESP_LOGI(TAG, "HTTP status %d", status);
+    if (status == 200) { ok = true; break; }
+    if (status == 301 || status == 302 || status == 303 || status == 307 || status == 308) {
+      esp_http_client_set_redirection(client);   // switches to the Location URL
+      esp_http_client_close(client);
+      continue;
+    }
+    break;
+  }
+  if (!ok) {
+    ESP_LOGE(TAG, "Radio stream not available");
+    esp_http_client_close(client);
+    esp_http_client_cleanup(client);
     s_radio_task = NULL;
     vTaskDelete(NULL);
     return;
   }
 
   ESP_LOGI(TAG, "Radio stream opened, starting MP3 decode");
-
   audio_beep_init();
 
   mp3dec_t *dec = malloc(sizeof(mp3dec_t));
-  uint8_t *mp3_buf = malloc(4096);
+  uint8_t *mp3_buf = malloc(MP3_BUF_SIZE);
   int16_t *pcm = malloc(MINIMP3_MAX_SAMPLES_PER_FRAME * sizeof(int16_t));
   if (!dec || !mp3_buf || !pcm) {
     ESP_LOGE(TAG, "Failed to allocate MP3 buffers");
@@ -113,36 +150,56 @@ static void radio_task(void *arg) {
   mp3dec_init(dec);
 
   int mp3_buf_len = 0;
+  int frames = 0;
+  int hb_frames = 0;
+  int64_t hb_last = esp_timer_get_time();
+  int cur_rate = STREAM_RATE;
 
   while (s_ringing) {
-    if (mp3_buf_len < 2048) {
-      int to_read = 4096 - mp3_buf_len;
-      int n = esp_http_client_read(client, (char *)(mp3_buf + mp3_buf_len), to_read);
-      if (n <= 0) break;
+    if (mp3_buf_len < MP3_REFILL_AT) {
+      int n = esp_http_client_read(client, (char *)(mp3_buf + mp3_buf_len),
+                                   MP3_BUF_SIZE - mp3_buf_len);
+      if (n <= 0) { ESP_LOGW(TAG, "stream read returned %d", n); break; }
       mp3_buf_len += n;
     }
 
     mp3dec_frame_info_t info;
     int samples = mp3dec_decode_frame(dec, mp3_buf, mp3_buf_len, pcm, &info);
+    int consumed = info.frame_bytes;
 
     if (samples > 0) {
-      size_t bytes = (size_t)samples * (size_t)info.channels * sizeof(int16_t);
-      audio_beep_write_pcm(pcm, bytes);
-
-      int consumed = info.frame_bytes;
-      if (consumed > 0 && consumed <= mp3_buf_len) {
-        memmove(mp3_buf, mp3_buf + consumed, mp3_buf_len - consumed);
-        mp3_buf_len -= consumed;
-      } else {
-        mp3_buf_len = 0;
+       if (frames++ < 5) {
+         ESP_LOGI(TAG, "frame: %d samples, %d Hz, %d ch, %d bytes",
+                  samples, info.hz, info.channels, consumed);
+       }
+      if (info.hz != cur_rate) {
+        if (audio_beep_set_format(info.hz, 2) == ESP_OK) cur_rate = info.hz;
       }
-    } else if (info.frame_bytes > 0) {
-      int skip = info.frame_bytes < mp3_buf_len ? info.frame_bytes : mp3_buf_len;
-      memmove(mp3_buf, mp3_buf + skip, mp3_buf_len - skip);
-      mp3_buf_len -= skip;
-    } else {
-      vTaskDelay(pdMS_TO_TICKS(5));
+      int ch = info.channels;
+      if (ch == 1) {                       // codec is stereo: expand in place
+        for (int i = samples - 1; i >= 0; i--) {
+          pcm[2 * i] = pcm[2 * i + 1] = pcm[i];
+        }
+        ch = 2;
+      }
+      hb_frames++;
+       int64_t t = esp_timer_get_time();
+       if (t - hb_last >= 1000000) {
+         ESP_LOGI(TAG, "alive: %d frames/s, buf=%d", hb_frames, mp3_buf_len);
+         hb_frames = 0;
+         hb_last = t;
+       }      
+      audio_beep_write_pcm(pcm, (size_t)samples * ch * sizeof(int16_t));
     }
+
+    if (consumed > 0 && consumed <= mp3_buf_len) {
+      memmove(mp3_buf, mp3_buf + consumed, mp3_buf_len - consumed);
+      mp3_buf_len -= consumed;
+    } else if (consumed == 0 && mp3_buf_len >= MP3_REFILL_AT) {
+      ESP_LOGW(TAG, "no MP3 frame in %d bytes, resyncing", mp3_buf_len);
+      mp3_buf_len = 0;                     // junk: drop it instead of spinning
+    }
+      vTaskDelay(1);   // always give IDLE1 a chance to run
   }
 
   free(dec);
@@ -159,7 +216,15 @@ static void start_alarm_sound(void) {
   s_ringing = true;
   if (s_alarm.type == ALARM_TYPE_RADIO) {
     if (!s_radio_task) {
-      xTaskCreate(radio_task, "radio", 8192, NULL, 5, &s_radio_task);
+      if (!s_radio_stack) {
+        s_radio_stack = heap_caps_malloc(RADIO_STACK_SIZE, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+      }
+      if (s_radio_stack) {
+        s_radio_task = xTaskCreateStatic(radio_task, "radio", RADIO_STACK_SIZE,
+                                         NULL, 5, s_radio_stack, &s_radio_tcb);
+      } else {
+        ESP_LOGE(TAG, "No PSRAM for radio stack");
+      }
     }
   } else {
     if (!s_beep_task) {
