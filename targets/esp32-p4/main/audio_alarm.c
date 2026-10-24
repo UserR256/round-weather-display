@@ -93,7 +93,6 @@ static void radio_task(void *arg) {
 
   ESP_LOGI(TAG, "Radio stream opened, starting MP3 decode");
 
-  // Init codec for radio (will reconfigure sample rate if needed)
   audio_beep_init();
 
   mp3dec_t dec;
@@ -104,7 +103,6 @@ static void radio_task(void *arg) {
   int16_t pcm[MINIMP3_MAX_SAMPLES_PER_FRAME];
 
   while (s_ringing) {
-    // Read more data if buffer is low
     if (mp3_buf_len < 2048) {
       int to_read = sizeof(mp3_buf) - mp3_buf_len;
       int n = esp_http_client_read(client, (char *)(mp3_buf + mp3_buf_len), to_read);
@@ -116,13 +114,9 @@ static void radio_task(void *arg) {
     int samples = mp3dec_decode_frame(&dec, mp3_buf, mp3_buf_len, pcm, &info);
 
     if (samples > 0) {
-      // Write PCM to codec (stereo 16-bit)
-      size_t bytes = samples * info.channels * sizeof(int16_t);
-      // For simplicity we write via the existing codec path
-      // Note: sample rate may differ from 16kHz; for best results reconfigure codec
-      esp_codec_dev_write(codec_dev, pcm, bytes);  // codec_dev is static in audio_beep.c — we need a public write
+      size_t bytes = (size_t)samples * (size_t)info.channels * sizeof(int16_t);
+      audio_beep_write_pcm(pcm, bytes);
 
-      // Advance buffer
       int consumed = info.frame_bytes;
       if (consumed > 0 && consumed <= mp3_buf_len) {
         memmove(mp3_buf, mp3_buf + consumed, mp3_buf_len - consumed);
@@ -131,13 +125,11 @@ static void radio_task(void *arg) {
         mp3_buf_len = 0;
       }
     } else if (info.frame_bytes > 0) {
-      // Skip bad frame
       int skip = info.frame_bytes < mp3_buf_len ? info.frame_bytes : mp3_buf_len;
       memmove(mp3_buf, mp3_buf + skip, mp3_buf_len - skip);
       mp3_buf_len -= skip;
     } else {
-      // Need more data
-      vTaskDelay(pdMS_TO_TICKS(10));
+      vTaskDelay(pdMS_TO_TICKS(5));
     }
   }
 
