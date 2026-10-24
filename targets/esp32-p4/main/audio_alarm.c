@@ -10,17 +10,16 @@
 #include "esp_http_client.h"
 #include "esp_crt_bundle.h"
 #include "esp_heap_caps.h"
-#include "esp_netif.h"
 
 #define MINIMP3_IMPLEMENTATION
 #include "minimp3.h"
 
 #define RADIO_STACK_SIZE 24576
-#define RADIO_MAX_RETRIES     8
-#define RADIO_RETRY_DELAY_MS  3000
+#define RADIO_MAX_RETRIES     5
+#define RADIO_RETRY_DELAY_MS  2000
 #define MP3_BUF_SIZE     8192
 #define MP3_REFILL_AT    4096
-#define STREAM_RATE      44100
+#define STREAM_RATE      44100   // must match SAMPLE_RATE in audio_beep.c
 
 static StaticTask_t s_radio_tcb;
 static StackType_t *s_radio_stack = NULL;
@@ -34,7 +33,6 @@ static alarm_config_t s_alarm = {
   .hour = 7,
   .minute = 0,
   .type = ALARM_TYPE_BEEP,
-  .volume = 70,
 };
 static bool s_alarm_triggered = false;
 static bool s_ringing = false;
@@ -43,39 +41,22 @@ static TaskHandle_t s_radio_task = NULL;
 static TaskHandle_t s_beep_task = NULL;
 static int s_last_triggered_minute = -1;
 
-static bool wait_for_wifi(int timeout_ms) {
-  esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
-  if (!netif) return false;
-  int waited = 0;
-  while (waited < timeout_ms && s_ringing) {
-    esp_netif_ip_info_t ip;
-    if (esp_netif_get_ip_info(netif, &ip) == ESP_OK && ip.ip.addr != 0) {
-      return true;
-    }
-    vTaskDelay(pdMS_TO_TICKS(500));
-    waited += 500;
-  }
-  return false;
-}
-
 static esp_err_t load_from_nvs(void) {
   nvs_handle_t nvs;
   esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &nvs);
   if (err != ESP_OK) return err;
 
-  uint8_t enabled = 0, hour = 7, minute = 0, type = 0, volume = 70;
+  uint8_t enabled = 0, hour = 7, minute = 0, type = 0;
   nvs_get_u8(nvs, "enabled", &enabled);
   nvs_get_u8(nvs, "hour", &hour);
   nvs_get_u8(nvs, "minute", &minute);
   nvs_get_u8(nvs, "type", &type);
-  nvs_get_u8(nvs, "volume", &volume);
   nvs_close(nvs);
 
   s_alarm.enabled = enabled;
   s_alarm.hour = hour;
   s_alarm.minute = minute;
   s_alarm.type = type;
-  s_alarm.volume = volume;
   return ESP_OK;
 }
 
@@ -86,26 +67,14 @@ static esp_err_t save_to_nvs(void) {
   ESP_ERROR_CHECK(nvs_set_u8(nvs, "hour", s_alarm.hour));
   ESP_ERROR_CHECK(nvs_set_u8(nvs, "minute", s_alarm.minute));
   ESP_ERROR_CHECK(nvs_set_u8(nvs, "type", s_alarm.type));
-  ESP_ERROR_CHECK(nvs_set_u8(nvs, "volume", s_alarm.volume));
   ESP_ERROR_CHECK(nvs_commit(nvs));
   nvs_close(nvs);
   return ESP_OK;
 }
 
-void audio_alarm_set_volume(uint8_t volume) {
-  s_alarm.volume = volume > 100 ? 100 : volume;
-  audio_beep_set_volume(s_alarm.volume);
-  save_to_nvs();
-}
-
-uint8_t audio_alarm_get_volume(void) {
-  return s_alarm.volume;
-}
-
 static void beep_task(void *arg) {
   (void)arg;
   audio_beep_init();
-  audio_beep_set_volume(s_alarm.volume);
   while (s_ringing) {
     audio_beep_play(1000, 250);
     vTaskDelay(pdMS_TO_TICKS(150));
@@ -143,13 +112,6 @@ static bool radio_open(esp_http_client_handle_t client) {
 static void radio_task(void *arg) {
   (void)arg;
 
-  ESP_LOGI(TAG, "Waiting for WiFi before radio...");
-  if (!wait_for_wifi(25000)) {
-    ESP_LOGW(TAG, "WiFi not ready, falling back to beep");
-    goto fallback;
-  }
-  ESP_LOGI(TAG, "WiFi ready, starting radio");
-
   esp_http_client_config_t config = {
     .url = RADIO_URL,
     .timeout_ms = 5000,
@@ -164,7 +126,9 @@ static void radio_task(void *arg) {
     ESP_LOGE(TAG, "Failed to allocate radio resources");
     free(dec); free(mp3_buf); free(pcm);
     if (client) esp_http_client_cleanup(client);
-    goto fallback;
+    s_radio_task = NULL;
+    vTaskDelete(NULL);
+    return;
   }
 
   int cur_rate = STREAM_RATE;
@@ -179,7 +143,6 @@ static void radio_task(void *arg) {
     }
 
     audio_beep_init();
-    audio_beep_set_volume(s_alarm.volume);
     mp3dec_init(dec);
     int mp3_buf_len = 0;
     bool got_audio = false;
@@ -231,16 +194,12 @@ static void radio_task(void *arg) {
     vTaskDelay(pdMS_TO_TICKS(RADIO_RETRY_DELAY_MS));
   }
 
-  free(dec);
-  free(mp3_buf);
-  free(pcm);
-  if (client) esp_http_client_cleanup(client);
-
-fallback:
   if (s_ringing) {
     ESP_LOGE(TAG, "Radio failed, falling back to beep");
     if (audio_beep_init() == ESP_OK) {
-      audio_beep_set_volume(s_alarm.volume);
+      if (cur_rate != STREAM_RATE && audio_beep_set_format(STREAM_RATE, 2) == ESP_OK) {
+        cur_rate = STREAM_RATE;
+      }
       while (s_ringing) {
         audio_beep_play(1000, 250);
         vTaskDelay(pdMS_TO_TICKS(150));
@@ -251,6 +210,10 @@ fallback:
     }
   }
 
+  free(dec);
+  free(mp3_buf);
+  free(pcm);
+  esp_http_client_cleanup(client);
   audio_beep_deinit();
   s_radio_task = NULL;
   vTaskDelete(NULL);
@@ -283,12 +246,10 @@ static void stop_alarm_sound(void) {
 
 esp_err_t audio_alarm_init(void) {
   load_from_nvs();
-  audio_beep_set_volume(s_alarm.volume);
-  ESP_LOGI(TAG, "Alarm loaded: %02d:%02d %s %s vol=%d",
+  ESP_LOGI(TAG, "Alarm loaded: %02d:%02d %s %s",
            s_alarm.hour, s_alarm.minute,
            s_alarm.enabled ? "ON" : "OFF",
-           s_alarm.type == ALARM_TYPE_RADIO ? "RADIO" : "BEEP",
-           s_alarm.volume);
+           s_alarm.type == ALARM_TYPE_RADIO ? "RADIO" : "BEEP");
   return ESP_OK;
 }
 
@@ -298,7 +259,6 @@ esp_err_t audio_alarm_set(const alarm_config_t *config) {
   s_alarm_triggered = false;
   s_snooze_until = 0;
   s_last_triggered_minute = -1;
-  audio_beep_set_volume(s_alarm.volume);
   return save_to_nvs();
 }
 
