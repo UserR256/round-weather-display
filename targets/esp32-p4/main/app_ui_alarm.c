@@ -282,7 +282,7 @@ lv_obj_t *create_alarm_panel(lv_obj_t *parent) {
 
   s_alarm_indicator = lv_label_create(scr);
   lv_obj_set_style_text_color(s_alarm_indicator, lv_color_hex(0xaaaaaa), 0);
-  lv_obj_set_style_text_font(s_alarm_indicator, &lv_font_montserrat_16, 0);
+  lv_obj_set_style_text_font(s_alarm_indicator, &lv_font_montserrat_24, 0);
   lv_obj_align(s_alarm_indicator, LV_ALIGN_CENTER, 0, 70);
 
   s_home_volume_slider = lv_slider_create(scr);
