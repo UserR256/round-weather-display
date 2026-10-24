@@ -180,7 +180,8 @@ void audio_alarm_stop(void) {
 
 void audio_alarm_snooze(void) {
   ESP_LOGI(TAG, "Snoozed for 10 minutes");
-  s_snooze_until = time(NULL) + 10 * 60;
+// s_snooze_until = time(NULL) + 10 * 60;
+  s_snooze_until = time(NULL) + 10 ; //for testing, set to 10 seconds
   s_alarm_triggered = false;
   stop_alarm_sound();
 }
