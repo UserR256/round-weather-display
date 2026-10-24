@@ -2,8 +2,7 @@
 #define MINIMP3_H
 /*
     https://github.com/lieff/minimp3
-    To the extent possible under law, the author(s) have dedicated all copyright and related and neighboring rights to this software to the public domain worldwide.
-    This software is distributed without any warranty.
+    Public domain.
 */
 #include <stdint.h>
 
@@ -15,20 +14,13 @@ typedef struct {
 
 typedef struct mp3dec_t mp3dec_t;
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 void mp3dec_init(mp3dec_t *dec);
 int mp3dec_decode_frame(mp3dec_t *dec, const uint8_t *mp3, int mp3_bytes, short *pcm, mp3dec_frame_info_t *info);
 
-#ifdef __cplusplus
-}
-#endif
-
 #ifdef MINIMP3_IMPLEMENTATION
-/* Full implementation omitted in this stub for size; the real minimp3.h is large.
-   For the actual project we will use a proper include. */
+/* Implementation is large; for this project we will use a pre-integrated version.
+   Full minimp3.h should be downloaded from https://github.com/lieff/minimp3
+   and placed here for compilation. */
 #endif
 
-#endif /* MINIMP3_H */
+#endif
