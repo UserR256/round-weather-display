@@ -144,7 +144,7 @@ static void start_alarm_sound(void) {
   s_ringing = true;
   if (s_alarm.type == ALARM_TYPE_RADIO) {
     if (!s_radio_task) {
-      xTaskCreate(radio_task, "radio", 8192, NULL, 5, &s_radio_task);
+      xTaskCreate(radio_task, "radio", 24576, NULL, 5, &s_radio_task);
     }
   } else {
     if (!s_beep_task) {
