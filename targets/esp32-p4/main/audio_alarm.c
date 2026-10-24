@@ -7,6 +7,7 @@
 #include "freertos/task.h"
 #include "nvs.h"
 #include "esp_http_client.h"
+#include "esp_crt_bundle.h"
 
 static const char *TAG = "audio_alarm";
 static const char *NVS_NAMESPACE = "alarm";
@@ -76,6 +77,7 @@ static void radio_task(void *arg) {
   esp_http_client_config_t config = {
     .url = RADIO_URL,
     .timeout_ms = 10000,
+    .crt_bundle_attach = esp_crt_bundle_attach,
   };
   esp_http_client_handle_t client = esp_http_client_init(&config);
   if (esp_http_client_open(client, 0) != ESP_OK) {
@@ -85,6 +87,7 @@ static void radio_task(void *arg) {
     return;
   }
 
+  ESP_LOGI(TAG, "Radio stream opened, reading...");
   char buffer[1024];
   while (s_ringing) {
     int len = esp_http_client_read(client, buffer, sizeof(buffer));
