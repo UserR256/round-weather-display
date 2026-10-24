@@ -22,6 +22,7 @@ static const char *TAG = "audio_beep";
 
 static i2s_chan_handle_t tx_handle = NULL;
 static esp_codec_dev_handle_t codec_dev = NULL;
+static bool i2s_enabled = false;
 
 static void generate_tone(int16_t *buffer, size_t samples, float freq) {
   static float phase = 0;
@@ -64,7 +65,7 @@ esp_err_t audio_beep_init(void) {
     },
   };
   ESP_ERROR_CHECK(i2s_channel_init_std_mode(tx_handle, &std_cfg));
-  ESP_ERROR_CHECK(i2s_channel_enable(tx_handle));
+  // Do not enable here — let the codec driver manage the channel state
 
   // Codec via BSP I2C
   i2c_master_bus_handle_t i2c_bus = bsp_i2c_get_handle();
@@ -118,6 +119,10 @@ esp_err_t audio_beep_init(void) {
   ESP_ERROR_CHECK(esp_codec_dev_open(codec_dev, &fs));
   ESP_ERROR_CHECK(esp_codec_dev_set_out_vol(codec_dev, 70));
 
+  // Enable I2S after codec is open
+  ESP_ERROR_CHECK(i2s_channel_enable(tx_handle));
+  i2s_enabled = true;
+
   ESP_LOGI(TAG, "ES8311 codec ready");
   return ESP_OK;
 }
@@ -150,7 +155,10 @@ void audio_beep_deinit(void) {
     codec_dev = NULL;
   }
   if (tx_handle) {
-    i2s_channel_disable(tx_handle);
+    if (i2s_enabled) {
+      i2s_channel_disable(tx_handle);
+      i2s_enabled = false;
+    }
     i2s_del_channel(tx_handle);
     tx_handle = NULL;
   }
