@@ -1,6 +1,5 @@
 #include "app_ui_alarm.h"
 #include "audio_alarm.h"
-#include "audio_beep.h"
 #include "lvgl.h"
 #include "esp_log.h"
 #include <stdio.h>
@@ -13,11 +12,6 @@ static lv_obj_t *s_hour_roller = NULL;
 static lv_obj_t *s_minute_roller = NULL;
 static lv_obj_t *s_enable_btn = NULL;
 static lv_obj_t *s_type_btn = NULL;
-static lv_obj_t *s_volume_slider = NULL;
-static lv_obj_t *s_volume_label = NULL;
-static lv_obj_t *s_alarm_indicator = NULL;
-static lv_obj_t *s_home_volume_slider = NULL;
-static lv_obj_t *s_home_volume_label = NULL;
 
 static alarm_config_t s_edit_alarm;
 
@@ -34,41 +28,6 @@ static void refresh_alarm_buttons(void) {
       lv_label_set_text(label, s_edit_alarm.type == ALARM_TYPE_RADIO ? "Type: Radio" : "Type: Beep");
     }
   }
-  if (s_volume_label) {
-    char buf[32];
-    snprintf(buf, sizeof(buf), "Volume: %d", s_edit_alarm.volume);
-    lv_label_set_text(s_volume_label, buf);
-  }
-}
-
-static void update_alarm_indicator(void) {
-  alarm_config_t cfg;
-  audio_alarm_get(&cfg);
-
-  if (s_alarm_indicator) {
-    if (cfg.enabled) {
-      char buf[32];
-      snprintf(buf, sizeof(buf), "Alarm %02d:%02d", cfg.hour, cfg.minute);
-      lv_label_set_text(s_alarm_indicator, buf);
-      lv_obj_clear_flag(s_alarm_indicator, LV_OBJ_FLAG_HIDDEN);
-    } else {
-      lv_obj_add_flag(s_alarm_indicator, LV_OBJ_FLAG_HIDDEN);
-    }
-  }
-
-  if (s_home_volume_slider && s_home_volume_label) {
-    if (cfg.enabled) {
-      lv_slider_set_value(s_home_volume_slider, cfg.volume, LV_ANIM_OFF);
-      char buf[16];
-      snprintf(buf, sizeof(buf), "%d", cfg.volume);
-      lv_label_set_text(s_home_volume_label, buf);
-      lv_obj_clear_flag(s_home_volume_slider, LV_OBJ_FLAG_HIDDEN);
-      lv_obj_clear_flag(s_home_volume_label, LV_OBJ_FLAG_HIDDEN);
-    } else {
-      lv_obj_add_flag(s_home_volume_slider, LV_OBJ_FLAG_HIDDEN);
-      lv_obj_add_flag(s_home_volume_label, LV_OBJ_FLAG_HIDDEN);
-    }
-  }
 }
 
 static void enable_event_cb(lv_event_t *e) {
@@ -83,43 +42,16 @@ static void type_event_cb(lv_event_t *e) {
   refresh_alarm_buttons();
 }
 
-static void volume_event_cb(lv_event_t *e) {
-  (void)e;
-  if (s_volume_slider) {
-    s_edit_alarm.volume = (uint8_t)lv_slider_get_value(s_volume_slider);
-    refresh_alarm_buttons();
-    audio_beep_set_volume(s_edit_alarm.volume);
-  }
-}
-
-static void home_volume_event_cb(lv_event_t *e) {
-  (void)e;
-  if (!s_home_volume_slider) return;
-  uint8_t vol = (uint8_t)lv_slider_get_value(s_home_volume_slider);
-  audio_alarm_set_volume(vol);
-  if (s_home_volume_label) {
-    char buf[16];
-    snprintf(buf, sizeof(buf), "%d", vol);
-    lv_label_set_text(s_home_volume_label, buf);
-  }
-  if (s_volume_slider) {
-    lv_slider_set_value(s_volume_slider, vol, LV_ANIM_OFF);
-  }
-}
-
 static void save_event_cb(lv_event_t *e) {
   (void)e;
   if (s_hour_roller) s_edit_alarm.hour = (uint8_t)lv_roller_get_selected(s_hour_roller);
   if (s_minute_roller) s_edit_alarm.minute = (uint8_t)lv_roller_get_selected(s_minute_roller);
-  if (s_volume_slider) s_edit_alarm.volume = (uint8_t)lv_slider_get_value(s_volume_slider);
 
   audio_alarm_set(&s_edit_alarm);
-  update_alarm_indicator();
-  ESP_LOGI(TAG, "Alarm saved: %02d:%02d %s %s vol=%d",
+  ESP_LOGI(TAG, "Alarm saved: %02d:%02d %s %s",
            s_edit_alarm.hour, s_edit_alarm.minute,
            s_edit_alarm.enabled ? "ON" : "OFF",
-           s_edit_alarm.type == ALARM_TYPE_RADIO ? "RADIO" : "BEEP",
-           s_edit_alarm.volume);
+           s_edit_alarm.type == ALARM_TYPE_RADIO ? "RADIO" : "BEEP");
 
   if (s_alarm_panel) {
     lv_obj_add_flag(s_alarm_panel, LV_OBJ_FLAG_HIDDEN);
@@ -190,7 +122,7 @@ lv_obj_t *create_alarm_panel(lv_obj_t *parent) {
   audio_alarm_get(&s_edit_alarm);
 
   s_alarm_panel = lv_obj_create(parent);
-  lv_obj_set_size(s_alarm_panel, 500, 480);
+  lv_obj_set_size(s_alarm_panel, 500, 400);
   lv_obj_center(s_alarm_panel);
   lv_obj_set_style_bg_color(s_alarm_panel, lv_color_hex(0x1a1a2e), 0);
   lv_obj_set_style_radius(s_alarm_panel, 20, 0);
@@ -212,7 +144,7 @@ lv_obj_t *create_alarm_panel(lv_obj_t *parent) {
   lv_roller_set_options(s_hour_roller, hours, LV_ROLLER_MODE_INFINITE);
   lv_roller_set_selected(s_hour_roller, s_edit_alarm.hour, LV_ANIM_OFF);
   lv_obj_set_width(s_hour_roller, 80);
-  lv_obj_align(s_hour_roller, LV_ALIGN_CENTER, -60, -40);
+  lv_obj_align(s_hour_roller, LV_ALIGN_CENTER, -60, -20);
 
   s_minute_roller = lv_roller_create(s_alarm_panel);
   char minutes[60 * 4];
@@ -224,39 +156,27 @@ lv_obj_t *create_alarm_panel(lv_obj_t *parent) {
   lv_roller_set_options(s_minute_roller, minutes, LV_ROLLER_MODE_INFINITE);
   lv_roller_set_selected(s_minute_roller, s_edit_alarm.minute, LV_ANIM_OFF);
   lv_obj_set_width(s_minute_roller, 80);
-  lv_obj_align(s_minute_roller, LV_ALIGN_CENTER, 60, -40);
+  lv_obj_align(s_minute_roller, LV_ALIGN_CENTER, 60, -20);
 
   lv_obj_t *colon = lv_label_create(s_alarm_panel);
   lv_label_set_text(colon, ":");
-  lv_obj_align(colon, LV_ALIGN_CENTER, 0, -40);
+  lv_obj_align(colon, LV_ALIGN_CENTER, 0, -20);
   lv_obj_set_style_text_color(colon, lv_color_white(), 0);
   lv_obj_set_style_text_font(colon, &lv_font_montserrat_24, 0);
 
   s_enable_btn = lv_btn_create(s_alarm_panel);
   lv_obj_set_size(s_enable_btn, 180, 45);
-  lv_obj_align(s_enable_btn, LV_ALIGN_CENTER, -100, 40);
+  lv_obj_align(s_enable_btn, LV_ALIGN_BOTTOM_LEFT, 30, -80);
   lv_obj_add_event_cb(s_enable_btn, enable_event_cb, LV_EVENT_CLICKED, NULL);
   lv_obj_t *en_label = lv_label_create(s_enable_btn);
   lv_obj_center(en_label);
 
   s_type_btn = lv_btn_create(s_alarm_panel);
   lv_obj_set_size(s_type_btn, 180, 45);
-  lv_obj_align(s_type_btn, LV_ALIGN_CENTER, 100, 40);
+  lv_obj_align(s_type_btn, LV_ALIGN_BOTTOM_RIGHT, -30, -80);
   lv_obj_add_event_cb(s_type_btn, type_event_cb, LV_EVENT_CLICKED, NULL);
   lv_obj_t *type_label = lv_label_create(s_type_btn);
   lv_obj_center(type_label);
-
-  s_volume_label = lv_label_create(s_alarm_panel);
-  lv_label_set_text(s_volume_label, "Volume: 70");
-  lv_obj_align(s_volume_label, LV_ALIGN_CENTER, 0, 100);
-  lv_obj_set_style_text_color(s_volume_label, lv_color_white(), 0);
-
-  s_volume_slider = lv_slider_create(s_alarm_panel);
-  lv_obj_set_width(s_volume_slider, 300);
-  lv_slider_set_range(s_volume_slider, 0, 100);
-  lv_slider_set_value(s_volume_slider, s_edit_alarm.volume, LV_ANIM_OFF);
-  lv_obj_align(s_volume_slider, LV_ALIGN_CENTER, 0, 140);
-  lv_obj_add_event_cb(s_volume_slider, volume_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
   lv_obj_t *save_btn = lv_btn_create(s_alarm_panel);
   lv_obj_set_size(save_btn, 140, 40);
@@ -277,31 +197,6 @@ lv_obj_t *create_alarm_panel(lv_obj_t *parent) {
   refresh_alarm_buttons();
   create_ring_popup();
 
-  // Home screen: alarm time + volume under the clock
-  lv_obj_t *scr = lv_scr_act();
-
-  s_alarm_indicator = lv_label_create(scr);
-  lv_obj_set_style_text_color(s_alarm_indicator, lv_color_hex(0xaaaaaa), 0);
-  lv_obj_set_style_text_font(s_alarm_indicator, &lv_font_montserrat_24, 0);
-  lv_obj_align(s_alarm_indicator, LV_ALIGN_CENTER, 0, 70);
-
-  s_home_volume_slider = lv_slider_create(scr);
-  lv_obj_set_width(s_home_volume_slider, 160);
-  lv_obj_set_height(s_home_volume_slider, 6);
-  lv_slider_set_range(s_home_volume_slider, 0, 100);
-  lv_obj_align(s_home_volume_slider, LV_ALIGN_CENTER, 0, 100);
-  lv_obj_set_style_bg_color(s_home_volume_slider, lv_color_hex(0x444444), LV_PART_MAIN);
-  lv_obj_set_style_bg_color(s_home_volume_slider, lv_color_hex(0xffffff), LV_PART_INDICATOR);
-  lv_obj_set_style_bg_color(s_home_volume_slider, lv_color_hex(0xffffff), LV_PART_KNOB);
-  lv_obj_add_event_cb(s_home_volume_slider, home_volume_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
-
-  s_home_volume_label = lv_label_create(scr);
-  lv_obj_set_style_text_color(s_home_volume_label, lv_color_hex(0x888888), 0);
-  lv_obj_set_style_text_font(s_home_volume_label, &lv_font_montserrat_14, 0);
-  lv_obj_align(s_home_volume_label, LV_ALIGN_CENTER, 100, 100);
-
-  update_alarm_indicator();
-
   return s_alarm_panel;
 }
 
@@ -310,7 +205,6 @@ void show_alarm_panel(void) {
     audio_alarm_get(&s_edit_alarm);
     if (s_hour_roller) lv_roller_set_selected(s_hour_roller, s_edit_alarm.hour, LV_ANIM_OFF);
     if (s_minute_roller) lv_roller_set_selected(s_minute_roller, s_edit_alarm.minute, LV_ANIM_OFF);
-    if (s_volume_slider) lv_slider_set_value(s_volume_slider, s_edit_alarm.volume, LV_ANIM_OFF);
     refresh_alarm_buttons();
     lv_obj_clear_flag(s_alarm_panel, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_foreground(s_alarm_panel);
@@ -328,8 +222,4 @@ void hide_alarm_ring_popup(void) {
   if (s_ring_popup) {
     lv_obj_add_flag(s_ring_popup, LV_OBJ_FLAG_HIDDEN);
   }
-}
-
-void update_alarm_indicator_ui(void) {
-  update_alarm_indicator();
 }
