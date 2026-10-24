@@ -1,6 +1,7 @@
 #include "audio_alarm.h"
 #include "audio_beep.h"
 #include <string.h>
+#include <stdlib.h>
 #include <time.h>
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -95,23 +96,33 @@ static void radio_task(void *arg) {
 
   audio_beep_init();
 
-  mp3dec_t dec;
-  mp3dec_init(&dec);
+  mp3dec_t *dec = malloc(sizeof(mp3dec_t));
+  uint8_t *mp3_buf = malloc(4096);
+  int16_t *pcm = malloc(MINIMP3_MAX_SAMPLES_PER_FRAME * sizeof(int16_t));
+  if (!dec || !mp3_buf || !pcm) {
+    ESP_LOGE(TAG, "Failed to allocate MP3 buffers");
+    free(dec); free(mp3_buf); free(pcm);
+    esp_http_client_close(client);
+    esp_http_client_cleanup(client);
+    audio_beep_deinit();
+    s_radio_task = NULL;
+    vTaskDelete(NULL);
+    return;
+  }
+  mp3dec_init(dec);
 
-  uint8_t mp3_buf[4096];
   int mp3_buf_len = 0;
-  int16_t pcm[MINIMP3_MAX_SAMPLES_PER_FRAME];
 
   while (s_ringing) {
     if (mp3_buf_len < 2048) {
-      int to_read = sizeof(mp3_buf) - mp3_buf_len;
+      int to_read = 4096 - mp3_buf_len;
       int n = esp_http_client_read(client, (char *)(mp3_buf + mp3_buf_len), to_read);
       if (n <= 0) break;
       mp3_buf_len += n;
     }
 
     mp3dec_frame_info_t info;
-    int samples = mp3dec_decode_frame(&dec, mp3_buf, mp3_buf_len, pcm, &info);
+    int samples = mp3dec_decode_frame(dec, mp3_buf, mp3_buf_len, pcm, &info);
 
     if (samples > 0) {
       size_t bytes = (size_t)samples * (size_t)info.channels * sizeof(int16_t);
@@ -133,6 +144,9 @@ static void radio_task(void *arg) {
     }
   }
 
+  free(dec);
+  free(mp3_buf);
+  free(pcm);
   esp_http_client_close(client);
   esp_http_client_cleanup(client);
   audio_beep_deinit();
@@ -144,7 +158,7 @@ static void start_alarm_sound(void) {
   s_ringing = true;
   if (s_alarm.type == ALARM_TYPE_RADIO) {
     if (!s_radio_task) {
-      xTaskCreate(radio_task, "radio", 24576, NULL, 5, &s_radio_task);
+      xTaskCreate(radio_task, "radio", 8192, NULL, 5, &s_radio_task);
     }
   } else {
     if (!s_beep_task) {
