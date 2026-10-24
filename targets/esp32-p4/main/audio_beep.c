@@ -43,7 +43,6 @@ esp_err_t audio_beep_init(void) {
   gpio_config(&io_conf);
   gpio_set_level(PIN_POWER_AMP, 1);
 
-  // I2S channel
   i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
   ESP_ERROR_CHECK(i2s_new_channel(&chan_cfg, &tx_handle, NULL));
 
@@ -64,13 +63,6 @@ esp_err_t audio_beep_init(void) {
     },
   };
   ESP_ERROR_CHECK(i2s_channel_init_std_mode(tx_handle, &std_cfg));
-
-  // Enable before codec open — the codec driver expects the channel to exist
-  // and may try to disable/reconfigure it. Ignore "already enabled" later.
-  esp_err_t en = i2s_channel_enable(tx_handle);
-  if (en != ESP_OK && en != ESP_ERR_INVALID_STATE) {
-    ESP_LOGW(TAG, "i2s_channel_enable returned %s", esp_err_to_name(en));
-  }
 
   // Codec via BSP I2C
   i2c_master_bus_handle_t i2c_bus = bsp_i2c_get_handle();
@@ -156,7 +148,11 @@ void audio_beep_deinit(void) {
     codec_dev = NULL;
   }
   if (tx_handle) {
-    i2s_channel_disable(tx_handle);
+    // Ignore error if the channel was never enabled by us
+    esp_err_t err = i2s_channel_disable(tx_handle);
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+      ESP_LOGW(TAG, "i2s_channel_disable: %s", esp_err_to_name(err));
+    }
     i2s_del_channel(tx_handle);
     tx_handle = NULL;
   }
