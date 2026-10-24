@@ -36,6 +36,7 @@ static void generate_tone(int16_t *buffer, size_t samples, float freq) {
 }
 
 esp_err_t audio_beep_init(void) {
+  if (codec_dev) return ESP_OK;
   gpio_config_t io_conf = {
     .pin_bit_mask = (1ULL << PIN_POWER_AMP),
     .mode = GPIO_MODE_OUTPUT,
@@ -63,10 +64,8 @@ esp_err_t audio_beep_init(void) {
     },
   };
   ESP_ERROR_CHECK(i2s_channel_init_std_mode(tx_handle, &std_cfg));
-
-  // Enable the channel first. The codec driver may try to disable it
-  // during open; we ignore that error.
-  i2s_channel_enable(tx_handle);
+  i2s_channel_enable(tx_handle);   // lets the codec's disable-before-reconfigure succeed
+  
 
   // Codec via BSP I2C
   i2c_master_bus_handle_t i2c_bus = bsp_i2c_get_handle();
@@ -152,7 +151,6 @@ void audio_beep_deinit(void) {
     codec_dev = NULL;
   }
   if (tx_handle) {
-    i2s_channel_disable(tx_handle);
     i2s_del_channel(tx_handle);
     tx_handle = NULL;
   }
