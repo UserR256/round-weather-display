@@ -10,13 +10,14 @@
 #include "esp_http_client.h"
 #include "esp_crt_bundle.h"
 #include "esp_heap_caps.h"
+#include "esp_netif.h"
 
 #define MINIMP3_IMPLEMENTATION
 #include "minimp3.h"
 
 #define RADIO_STACK_SIZE 24576
-#define RADIO_MAX_RETRIES     5
-#define RADIO_RETRY_DELAY_MS  2000
+#define RADIO_MAX_RETRIES     8
+#define RADIO_RETRY_DELAY_MS  3000
 #define MP3_BUF_SIZE     8192
 #define MP3_REFILL_AT    4096
 #define STREAM_RATE      44100
@@ -41,6 +42,21 @@ static time_t s_snooze_until = 0;
 static TaskHandle_t s_radio_task = NULL;
 static TaskHandle_t s_beep_task = NULL;
 static int s_last_triggered_minute = -1;
+
+static bool wait_for_wifi(int timeout_ms) {
+  esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+  if (!netif) return false;
+  int waited = 0;
+  while (waited < timeout_ms && s_ringing) {
+    esp_netif_ip_info_t ip;
+    if (esp_netif_get_ip_info(netif, &ip) == ESP_OK && ip.ip.addr != 0) {
+      return true;
+    }
+    vTaskDelay(pdMS_TO_TICKS(500));
+    waited += 500;
+  }
+  return false;
+}
 
 static esp_err_t load_from_nvs(void) {
   nvs_handle_t nvs;
@@ -127,6 +143,13 @@ static bool radio_open(esp_http_client_handle_t client) {
 static void radio_task(void *arg) {
   (void)arg;
 
+  ESP_LOGI(TAG, "Waiting for WiFi before radio...");
+  if (!wait_for_wifi(25000)) {
+    ESP_LOGW(TAG, "WiFi not ready, falling back to beep");
+    goto fallback;
+  }
+  ESP_LOGI(TAG, "WiFi ready, starting radio");
+
   esp_http_client_config_t config = {
     .url = RADIO_URL,
     .timeout_ms = 5000,
@@ -141,9 +164,7 @@ static void radio_task(void *arg) {
     ESP_LOGE(TAG, "Failed to allocate radio resources");
     free(dec); free(mp3_buf); free(pcm);
     if (client) esp_http_client_cleanup(client);
-    s_radio_task = NULL;
-    vTaskDelete(NULL);
-    return;
+    goto fallback;
   }
 
   int cur_rate = STREAM_RATE;
@@ -210,13 +231,16 @@ static void radio_task(void *arg) {
     vTaskDelay(pdMS_TO_TICKS(RADIO_RETRY_DELAY_MS));
   }
 
+  free(dec);
+  free(mp3_buf);
+  free(pcm);
+  if (client) esp_http_client_cleanup(client);
+
+fallback:
   if (s_ringing) {
     ESP_LOGE(TAG, "Radio failed, falling back to beep");
     if (audio_beep_init() == ESP_OK) {
       audio_beep_set_volume(s_alarm.volume);
-      if (cur_rate != STREAM_RATE && audio_beep_set_format(STREAM_RATE, 2) == ESP_OK) {
-        cur_rate = STREAM_RATE;
-      }
       while (s_ringing) {
         audio_beep_play(1000, 250);
         vTaskDelay(pdMS_TO_TICKS(150));
@@ -227,10 +251,6 @@ static void radio_task(void *arg) {
     }
   }
 
-  free(dec);
-  free(mp3_buf);
-  free(pcm);
-  esp_http_client_cleanup(client);
   audio_beep_deinit();
   s_radio_task = NULL;
   vTaskDelete(NULL);
