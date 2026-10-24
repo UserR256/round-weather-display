@@ -64,6 +64,10 @@ esp_err_t audio_beep_init(void) {
   };
   ESP_ERROR_CHECK(i2s_channel_init_std_mode(tx_handle, &std_cfg));
 
+  // Enable the channel first. The codec driver may try to disable it
+  // during open; we ignore that error.
+  i2s_channel_enable(tx_handle);
+
   // Codec via BSP I2C
   i2c_master_bus_handle_t i2c_bus = bsp_i2c_get_handle();
   if (!i2c_bus) {
@@ -148,11 +152,7 @@ void audio_beep_deinit(void) {
     codec_dev = NULL;
   }
   if (tx_handle) {
-    // Ignore error if the channel was never enabled by us
-    esp_err_t err = i2s_channel_disable(tx_handle);
-    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
-      ESP_LOGW(TAG, "i2s_channel_disable: %s", esp_err_to_name(err));
-    }
+    i2s_channel_disable(tx_handle);
     i2s_del_channel(tx_handle);
     tx_handle = NULL;
   }
