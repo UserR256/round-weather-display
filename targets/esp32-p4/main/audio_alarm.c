@@ -28,6 +28,7 @@ static bool s_ringing = false;
 static time_t s_snooze_until = 0;
 static TaskHandle_t s_radio_task = NULL;
 static TaskHandle_t s_beep_task = NULL;
+static int s_last_triggered_minute = -1;
 
 static esp_err_t load_from_nvs(void) {
   nvs_handle_t nvs;
@@ -185,6 +186,7 @@ esp_err_t audio_alarm_set(const alarm_config_t *config) {
   s_alarm = *config;
   s_alarm_triggered = false;
   s_snooze_until = 0;
+  s_last_triggered_minute = -1;
   return save_to_nvs();
 }
 
@@ -200,6 +202,16 @@ void audio_alarm_check(void) {
   time_t now = time(NULL);
   if (now < 1704067200) return;
 
+  struct tm tm;
+  localtime_r(&now, &tm);
+  int current_minute_key = tm.tm_hour * 60 + tm.tm_min;
+
+  // Reset trigger flag when the minute has changed
+  if (s_last_triggered_minute != -1 && s_last_triggered_minute != current_minute_key) {
+    s_alarm_triggered = false;
+    s_last_triggered_minute = -1;
+  }
+
   if (s_snooze_until > 0) {
     if (now >= s_snooze_until) {
       s_snooze_until = 0;
@@ -212,11 +224,9 @@ void audio_alarm_check(void) {
 
   if (s_alarm_triggered || s_ringing) return;
 
-  struct tm tm;
-  localtime_r(&now, &tm);
-
   if (tm.tm_hour == s_alarm.hour && tm.tm_min == s_alarm.minute) {
     s_alarm_triggered = true;
+    s_last_triggered_minute = current_minute_key;
     ESP_LOGI(TAG, "Alarm triggered!");
     start_alarm_sound();
   }
@@ -224,7 +234,7 @@ void audio_alarm_check(void) {
 
 void audio_alarm_stop(void) {
   ESP_LOGI(TAG, "Alarm stopped");
-  s_alarm_triggered = false;
+  // Keep s_alarm_triggered = true so it does not re-trigger while still on this minute
   s_snooze_until = 0;
   stop_alarm_sound();
 }
