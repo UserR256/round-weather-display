@@ -19,6 +19,7 @@ static const char *TAG = "audio_beep";
 
 #define SAMPLE_RATE    44100
 #define AMPLITUDE      8000
+#define VOLUME         70      // 0-100
 
 static i2s_chan_handle_t tx_handle = NULL;
 static esp_codec_dev_handle_t codec_dev = NULL;
@@ -48,13 +49,12 @@ esp_err_t audio_beep_set_format(int sample_rate, int channels) {
     ESP_LOGE(TAG, "reopen failed: %d", ret);
     return ESP_FAIL;
   }
-  esp_codec_dev_set_out_vol(codec_dev, 50);
-  ESP_LOGI(TAG, "format set: %d Hz, %d ch", sample_rate, channels);
+  esp_codec_dev_set_out_vol(codec_dev, VOLUME);
   return ESP_OK;
 }
 
 esp_err_t audio_beep_init(void) {
-  if (codec_dev) return ESP_OK; 
+  if (codec_dev) return ESP_OK;
 
   gpio_config_t io_conf = {
     .pin_bit_mask = (1ULL << PIN_POWER_AMP),
@@ -65,9 +65,9 @@ esp_err_t audio_beep_init(void) {
 
   i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
   chan_cfg.dma_desc_num  = 6;
-  chan_cfg.dma_frame_num = 1000;   // 6 x 1000 frames is about 136 ms (max is 1023 for 16-bit stereo)
+  chan_cfg.dma_frame_num = 1000;   // about 136 ms of buffer
   chan_cfg.auto_clear    = true;   // silence instead of repeating old data on underrun
-  ESP_ERROR_CHECK(i2s_new_channel(&chan_cfg, &tx_handle, NULL));   
+  ESP_ERROR_CHECK(i2s_new_channel(&chan_cfg, &tx_handle, NULL));
 
   i2s_std_config_t std_cfg = {
     .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(SAMPLE_RATE),
@@ -87,7 +87,6 @@ esp_err_t audio_beep_init(void) {
   };
   ESP_ERROR_CHECK(i2s_channel_init_std_mode(tx_handle, &std_cfg));
   i2s_channel_enable(tx_handle);   // lets the codec's disable-before-reconfigure succeed
-  
 
   // Codec via BSP I2C
   i2c_master_bus_handle_t i2c_bus = bsp_i2c_get_handle();
@@ -139,10 +138,9 @@ esp_err_t audio_beep_init(void) {
     .bits_per_sample = 16,
   };
   ESP_ERROR_CHECK(esp_codec_dev_open(codec_dev, &fs));
-  ESP_ERROR_CHECK(esp_codec_dev_set_out_vol(codec_dev, 70));
+  ESP_ERROR_CHECK(esp_codec_dev_set_out_vol(codec_dev, VOLUME));
 
   ESP_LOGI(TAG, "ES8311 codec ready");
-  
   return ESP_OK;
 }
 
@@ -157,8 +155,7 @@ void audio_beep_play(int frequency_hz, int duration_ms) {
   while (remaining > 0) {
     size_t to_gen = (remaining < chunk) ? remaining : chunk;
     generate_tone(buffer, to_gen, (float)frequency_hz);
-    
-    esp_codec_dev_write(codec_dev, buffer, to_gen * 2 * sizeof(int16_t));
+
     int ret = esp_codec_dev_write(codec_dev, buffer, to_gen * 2 * sizeof(int16_t));
     if (ret != ESP_CODEC_DEV_OK) ESP_LOGE(TAG, "write failed: %d", ret);
 
@@ -166,14 +163,14 @@ void audio_beep_play(int frequency_hz, int duration_ms) {
   }
 }
 
-    void audio_beep_write_pcm(const int16_t *pcm, size_t bytes) {
-      if (!codec_dev || !pcm || bytes == 0) return;
-      int ret = esp_codec_dev_write(codec_dev, (void *)pcm, bytes);
-      if (ret != ESP_CODEC_DEV_OK) {
-        static int errs = 0;
-        if (errs++ < 10) ESP_LOGE(TAG, "pcm write failed: %d", ret);
-      }
-    }
+void audio_beep_write_pcm(const int16_t *pcm, size_t bytes) {
+  if (!codec_dev || !pcm || bytes == 0) return;
+  int ret = esp_codec_dev_write(codec_dev, (void *)pcm, bytes);
+  if (ret != ESP_CODEC_DEV_OK) {
+    static int errs = 0;
+    if (errs++ < 10) ESP_LOGE(TAG, "pcm write failed: %d", ret);
+  }
+}
 
 void audio_beep_deinit(void) {
   if (codec_dev) {

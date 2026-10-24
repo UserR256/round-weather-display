@@ -9,15 +9,20 @@
 #include "nvs.h"
 #include "esp_http_client.h"
 #include "esp_crt_bundle.h"
-#include "esp_timer.h"
+#include "esp_heap_caps.h"
 
 #define MINIMP3_IMPLEMENTATION
 #include "minimp3.h"
 
-#include "esp_heap_caps.h"
-
 #define RADIO_STACK_SIZE 24576
-static StaticTask_t s_radio_tcb;            // task control block, must be internal RAM
+#define RADIO_MAX_RETRIES     5
+#define RADIO_RETRY_DELAY_MS  2000
+#define MP3_BUF_SIZE     8192
+#define MP3_REFILL_AT    4096
+#define STREAM_RATE      44100   // must match SAMPLE_RATE in audio_beep.c
+
+
+static StaticTask_t s_radio_tcb;            // task control block, internal RAM
 static StackType_t *s_radio_stack = NULL;   // the stack itself, lives in PSRAM
 
 static const char *TAG = "audio_alarm";
@@ -83,129 +88,134 @@ static void beep_task(void *arg) {
   vTaskDelete(NULL);
 }
 
-#define MP3_BUF_SIZE   8192
-#define MP3_REFILL_AT  4096
-#define STREAM_RATE    44100   // must match SAMPLE_RATE in audio_beep.c
-
-static void radio_task(void *arg) {
-
-
-  (void)arg;
-  ESP_LOGI(TAG, "Starting Radio 538");
-  ESP_LOGI(TAG, "free internal: %u, largest block: %u",
-         (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
-         (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
-
-  esp_http_client_config_t config = {
-    .url = RADIO_URL,
-    .timeout_ms = 10000,
-    .crt_bundle_attach = esp_crt_bundle_attach,
-  };
-  esp_http_client_handle_t client = esp_http_client_init(&config);
-
-  // Open the stream, following redirects manually (open() doesn't do it)
-  bool ok = false;
+static bool radio_open(esp_http_client_handle_t client) {
+  esp_http_client_set_url(client, RADIO_URL);   // reset: een eerdere redirect heeft de URL veranderd
   for (int attempt = 0; attempt < 5; attempt++) {
     if (esp_http_client_open(client, 0) != ESP_OK) {
       ESP_LOGE(TAG, "Failed to open radio stream");
-      vTaskDelay(1);   // always give IDLE1 a chance to run
       break;
     }
     esp_http_client_fetch_headers(client);
     int status = esp_http_client_get_status_code(client);
-    ESP_LOGI(TAG, "HTTP status %d", status);
-    if (status == 200) { ok = true; break; }
+    if (status == 200) return true;
     if (status == 301 || status == 302 || status == 303 || status == 307 || status == 308) {
-      esp_http_client_set_redirection(client);   // switches to the Location URL
+      esp_http_client_set_redirection(client);
       esp_http_client_close(client);
       continue;
     }
+    ESP_LOGE(TAG, "Unexpected HTTP status %d", status);
     break;
   }
-  if (!ok) {
-    ESP_LOGE(TAG, "Radio stream not available");
-    esp_http_client_close(client);
-    esp_http_client_cleanup(client);
-    s_radio_task = NULL;
-    vTaskDelete(NULL);
-    return;
-  }
+  esp_http_client_close(client);
+  return false;
+}
 
-  ESP_LOGI(TAG, "Radio stream opened, starting MP3 decode");
-  audio_beep_init();
+static void radio_task(void *arg) {
+  (void)arg;
+
+  esp_http_client_config_t config = {
+    .url = RADIO_URL,
+    .timeout_ms = 5000,
+    .crt_bundle_attach = esp_crt_bundle_attach,
+  };
+  esp_http_client_handle_t client = esp_http_client_init(&config);
 
   mp3dec_t *dec = malloc(sizeof(mp3dec_t));
   uint8_t *mp3_buf = malloc(MP3_BUF_SIZE);
   int16_t *pcm = malloc(MINIMP3_MAX_SAMPLES_PER_FRAME * sizeof(int16_t));
-  if (!dec || !mp3_buf || !pcm) {
-    ESP_LOGE(TAG, "Failed to allocate MP3 buffers");
+  if (!client || !dec || !mp3_buf || !pcm) {
+    ESP_LOGE(TAG, "Failed to allocate radio resources");
     free(dec); free(mp3_buf); free(pcm);
-    esp_http_client_close(client);
-    esp_http_client_cleanup(client);
-    audio_beep_deinit();
+    if (client) esp_http_client_cleanup(client);
     s_radio_task = NULL;
     vTaskDelete(NULL);
     return;
   }
-  mp3dec_init(dec);
 
-  int mp3_buf_len = 0;
-  int frames = 0;
-  int hb_frames = 0;
-  int64_t hb_last = esp_timer_get_time();
   int cur_rate = STREAM_RATE;
+  int failures = 0;
 
   while (s_ringing) {
-    if (mp3_buf_len < MP3_REFILL_AT) {
-      int n = esp_http_client_read(client, (char *)(mp3_buf + mp3_buf_len),
-                                   MP3_BUF_SIZE - mp3_buf_len);
-      if (n <= 0) { ESP_LOGW(TAG, "stream read returned %d", n); break; }
-      mp3_buf_len += n;
+    if (!radio_open(client)) {
+      if (++failures >= RADIO_MAX_RETRIES) break;
+      ESP_LOGW(TAG, "Retry %d/%d", failures, RADIO_MAX_RETRIES);
+      vTaskDelay(pdMS_TO_TICKS(RADIO_RETRY_DELAY_MS));
+      continue;
     }
 
-    mp3dec_frame_info_t info;
-    int samples = mp3dec_decode_frame(dec, mp3_buf, mp3_buf_len, pcm, &info);
-    int consumed = info.frame_bytes;
+    audio_beep_init();        // doet niets als de codec al open is
+    mp3dec_init(dec);
+    int mp3_buf_len = 0;
+    bool got_audio = false;
 
-    if (samples > 0) {
-       if (frames++ < 5) {
-         ESP_LOGI(TAG, "frame: %d samples, %d Hz, %d ch, %d bytes",
-                  samples, info.hz, info.channels, consumed);
-       }
-      if (info.hz != cur_rate) {
-        if (audio_beep_set_format(info.hz, 2) == ESP_OK) cur_rate = info.hz;
+    while (s_ringing) {
+      if (mp3_buf_len < MP3_REFILL_AT) {
+        int n = esp_http_client_read(client, (char *)(mp3_buf + mp3_buf_len),
+                                     MP3_BUF_SIZE - mp3_buf_len);
+        if (n <= 0) { ESP_LOGW(TAG, "stream read returned %d", n); break; }
+        mp3_buf_len += n;
       }
-      int ch = info.channels;
-      if (ch == 1) {                       // codec is stereo: expand in place
-        for (int i = samples - 1; i >= 0; i--) {
-          pcm[2 * i] = pcm[2 * i + 1] = pcm[i];
+
+      mp3dec_frame_info_t info;
+      int samples = mp3dec_decode_frame(dec, mp3_buf, mp3_buf_len, pcm, &info);
+      int consumed = info.frame_bytes;
+
+      if (samples > 0) {
+        got_audio = true;
+        if (info.hz != cur_rate) {
+          if (audio_beep_set_format(info.hz, 2) == ESP_OK) cur_rate = info.hz;
         }
-        ch = 2;
+        int ch = info.channels;
+        if (ch == 1) {                     // codec is stereo: expand in place
+          for (int i = samples - 1; i >= 0; i--) {
+            pcm[2 * i] = pcm[2 * i + 1] = pcm[i];
+          }
+          ch = 2;
+        }
+        audio_beep_write_pcm(pcm, (size_t)samples * ch * sizeof(int16_t));
       }
-      hb_frames++;
-       int64_t t = esp_timer_get_time();
-       if (t - hb_last >= 1000000) {
-         ESP_LOGI(TAG, "alive: %d frames/s, buf=%d", hb_frames, mp3_buf_len);
-         hb_frames = 0;
-         hb_last = t;
-       }      
-      audio_beep_write_pcm(pcm, (size_t)samples * ch * sizeof(int16_t));
+
+      if (consumed > 0 && consumed <= mp3_buf_len) {
+        memmove(mp3_buf, mp3_buf + consumed, mp3_buf_len - consumed);
+        mp3_buf_len -= consumed;
+      } else if (consumed == 0 && mp3_buf_len >= MP3_REFILL_AT) {
+        ESP_LOGW(TAG, "no MP3 frame in %d bytes, resyncing", mp3_buf_len);
+        mp3_buf_len = 0;
+      }
+
+      vTaskDelay(1);   // always give IDLE1 a chance to run
     }
 
-    if (consumed > 0 && consumed <= mp3_buf_len) {
-      memmove(mp3_buf, mp3_buf + consumed, mp3_buf_len - consumed);
-      mp3_buf_len -= consumed;
-    } else if (consumed == 0 && mp3_buf_len >= MP3_REFILL_AT) {
-      ESP_LOGW(TAG, "no MP3 frame in %d bytes, resyncing", mp3_buf_len);
-      mp3_buf_len = 0;                     // junk: drop it instead of spinning
+    esp_http_client_close(client);
+    if (!s_ringing) break;                 // gestopt of gesnoozed: geen reconnect
+
+    // Stream viel weg. Als hij eerst goed liep, begint de teller opnieuw.
+    failures = got_audio ? 1 : failures + 1;
+    if (failures >= RADIO_MAX_RETRIES) break;
+    ESP_LOGW(TAG, "Stream lost, reconnecting (%d/%d)", failures, RADIO_MAX_RETRIES);
+    vTaskDelay(pdMS_TO_TICKS(RADIO_RETRY_DELAY_MS));
+  }
+
+  // Radio lukt niet meer: val terug op de piep tot het alarm stopt
+  if (s_ringing) {
+    ESP_LOGE(TAG, "Radio failed, falling back to beep");
+    if (audio_beep_init() == ESP_OK) {
+      if (cur_rate != STREAM_RATE && audio_beep_set_format(STREAM_RATE, 2) == ESP_OK) {
+        cur_rate = STREAM_RATE;            // de piep-generator werkt op STREAM_RATE
+      }
+      while (s_ringing) {
+        audio_beep_play(1000, 250);
+        vTaskDelay(pdMS_TO_TICKS(150));
+        if (!s_ringing) break;
+        audio_beep_play(1200, 250);
+        vTaskDelay(pdMS_TO_TICKS(400));
+      }
     }
-      vTaskDelay(1);   // always give IDLE1 a chance to run
   }
 
   free(dec);
   free(mp3_buf);
   free(pcm);
-  esp_http_client_close(client);
   esp_http_client_cleanup(client);
   audio_beep_deinit();
   s_radio_task = NULL;
