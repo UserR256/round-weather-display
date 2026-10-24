@@ -138,6 +138,11 @@ void audio_beep_play(int frequency_hz, int duration_ms) {
   }
 }
 
+void audio_beep_write_pcm(const int16_t *pcm, size_t bytes) {
+  if (!codec_dev || !pcm || bytes == 0) return;
+  esp_codec_dev_write(codec_dev, (void *)pcm, bytes);
+}
+
 void audio_beep_deinit(void) {
   if (codec_dev) {
     esp_codec_dev_close(codec_dev);
