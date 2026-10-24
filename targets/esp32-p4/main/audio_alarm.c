@@ -19,11 +19,10 @@
 #define RADIO_RETRY_DELAY_MS  2000
 #define MP3_BUF_SIZE     8192
 #define MP3_REFILL_AT    4096
-#define STREAM_RATE      44100   // must match SAMPLE_RATE in audio_beep.c
+#define STREAM_RATE      44100
 
-
-static StaticTask_t s_radio_tcb;            // task control block, internal RAM
-static StackType_t *s_radio_stack = NULL;   // the stack itself, lives in PSRAM
+static StaticTask_t s_radio_tcb;
+static StackType_t *s_radio_stack = NULL;
 
 static const char *TAG = "audio_alarm";
 static const char *NVS_NAMESPACE = "alarm";
@@ -34,6 +33,7 @@ static alarm_config_t s_alarm = {
   .hour = 7,
   .minute = 0,
   .type = ALARM_TYPE_BEEP,
+  .volume = 70,
 };
 static bool s_alarm_triggered = false;
 static bool s_ringing = false;
@@ -47,17 +47,19 @@ static esp_err_t load_from_nvs(void) {
   esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &nvs);
   if (err != ESP_OK) return err;
 
-  uint8_t enabled = 0, hour = 7, minute = 0, type = 0;
+  uint8_t enabled = 0, hour = 7, minute = 0, type = 0, volume = 70;
   nvs_get_u8(nvs, "enabled", &enabled);
   nvs_get_u8(nvs, "hour", &hour);
   nvs_get_u8(nvs, "minute", &minute);
   nvs_get_u8(nvs, "type", &type);
+  nvs_get_u8(nvs, "volume", &volume);
   nvs_close(nvs);
 
   s_alarm.enabled = enabled;
   s_alarm.hour = hour;
   s_alarm.minute = minute;
   s_alarm.type = type;
+  s_alarm.volume = volume;
   return ESP_OK;
 }
 
@@ -68,14 +70,26 @@ static esp_err_t save_to_nvs(void) {
   ESP_ERROR_CHECK(nvs_set_u8(nvs, "hour", s_alarm.hour));
   ESP_ERROR_CHECK(nvs_set_u8(nvs, "minute", s_alarm.minute));
   ESP_ERROR_CHECK(nvs_set_u8(nvs, "type", s_alarm.type));
+  ESP_ERROR_CHECK(nvs_set_u8(nvs, "volume", s_alarm.volume));
   ESP_ERROR_CHECK(nvs_commit(nvs));
   nvs_close(nvs);
   return ESP_OK;
 }
 
+void audio_alarm_set_volume(uint8_t volume) {
+  s_alarm.volume = volume > 100 ? 100 : volume;
+  audio_beep_set_volume(s_alarm.volume);
+  save_to_nvs();
+}
+
+uint8_t audio_alarm_get_volume(void) {
+  return s_alarm.volume;
+}
+
 static void beep_task(void *arg) {
   (void)arg;
   audio_beep_init();
+  audio_beep_set_volume(s_alarm.volume);
   while (s_ringing) {
     audio_beep_play(1000, 250);
     vTaskDelay(pdMS_TO_TICKS(150));
@@ -89,7 +103,7 @@ static void beep_task(void *arg) {
 }
 
 static bool radio_open(esp_http_client_handle_t client) {
-  esp_http_client_set_url(client, RADIO_URL);   // reset: een eerdere redirect heeft de URL veranderd
+  esp_http_client_set_url(client, RADIO_URL);
   for (int attempt = 0; attempt < 5; attempt++) {
     if (esp_http_client_open(client, 0) != ESP_OK) {
       ESP_LOGE(TAG, "Failed to open radio stream");
@@ -143,7 +157,8 @@ static void radio_task(void *arg) {
       continue;
     }
 
-    audio_beep_init();        // doet niets als de codec al open is
+    audio_beep_init();
+    audio_beep_set_volume(s_alarm.volume);
     mp3dec_init(dec);
     int mp3_buf_len = 0;
     bool got_audio = false;
@@ -166,7 +181,7 @@ static void radio_task(void *arg) {
           if (audio_beep_set_format(info.hz, 2) == ESP_OK) cur_rate = info.hz;
         }
         int ch = info.channels;
-        if (ch == 1) {                     // codec is stereo: expand in place
+        if (ch == 1) {
           for (int i = samples - 1; i >= 0; i--) {
             pcm[2 * i] = pcm[2 * i + 1] = pcm[i];
           }
@@ -183,25 +198,24 @@ static void radio_task(void *arg) {
         mp3_buf_len = 0;
       }
 
-      vTaskDelay(1);   // always give IDLE1 a chance to run
+      vTaskDelay(1);
     }
 
     esp_http_client_close(client);
-    if (!s_ringing) break;                 // gestopt of gesnoozed: geen reconnect
+    if (!s_ringing) break;
 
-    // Stream viel weg. Als hij eerst goed liep, begint de teller opnieuw.
     failures = got_audio ? 1 : failures + 1;
     if (failures >= RADIO_MAX_RETRIES) break;
     ESP_LOGW(TAG, "Stream lost, reconnecting (%d/%d)", failures, RADIO_MAX_RETRIES);
     vTaskDelay(pdMS_TO_TICKS(RADIO_RETRY_DELAY_MS));
   }
 
-  // Radio lukt niet meer: val terug op de piep tot het alarm stopt
   if (s_ringing) {
     ESP_LOGE(TAG, "Radio failed, falling back to beep");
     if (audio_beep_init() == ESP_OK) {
+      audio_beep_set_volume(s_alarm.volume);
       if (cur_rate != STREAM_RATE && audio_beep_set_format(STREAM_RATE, 2) == ESP_OK) {
-        cur_rate = STREAM_RATE;            // de piep-generator werkt op STREAM_RATE
+        cur_rate = STREAM_RATE;
       }
       while (s_ringing) {
         audio_beep_play(1000, 250);
@@ -249,10 +263,12 @@ static void stop_alarm_sound(void) {
 
 esp_err_t audio_alarm_init(void) {
   load_from_nvs();
-  ESP_LOGI(TAG, "Alarm loaded: %02d:%02d %s %s",
+  audio_beep_set_volume(s_alarm.volume);
+  ESP_LOGI(TAG, "Alarm loaded: %02d:%02d %s %s vol=%d",
            s_alarm.hour, s_alarm.minute,
            s_alarm.enabled ? "ON" : "OFF",
-           s_alarm.type == ALARM_TYPE_RADIO ? "RADIO" : "BEEP");
+           s_alarm.type == ALARM_TYPE_RADIO ? "RADIO" : "BEEP",
+           s_alarm.volume);
   return ESP_OK;
 }
 
@@ -262,6 +278,7 @@ esp_err_t audio_alarm_set(const alarm_config_t *config) {
   s_alarm_triggered = false;
   s_snooze_until = 0;
   s_last_triggered_minute = -1;
+  audio_beep_set_volume(s_alarm.volume);
   return save_to_nvs();
 }
 
@@ -281,7 +298,6 @@ void audio_alarm_check(void) {
   localtime_r(&now, &tm);
   int current_minute_key = tm.tm_hour * 60 + tm.tm_min;
 
-  // Reset trigger flag when the minute has changed
   if (s_last_triggered_minute != -1 && s_last_triggered_minute != current_minute_key) {
     s_alarm_triggered = false;
     s_last_triggered_minute = -1;
@@ -309,7 +325,6 @@ void audio_alarm_check(void) {
 
 void audio_alarm_stop(void) {
   ESP_LOGI(TAG, "Alarm stopped");
-  // Keep s_alarm_triggered = true so it does not re-trigger while still on this minute
   s_snooze_until = 0;
   stop_alarm_sound();
 }
