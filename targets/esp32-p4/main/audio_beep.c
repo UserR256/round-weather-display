@@ -1,5 +1,6 @@
 #include "audio_beep.h"
 #include <math.h>
+#include <stdbool.h>
 #include "driver/i2s_std.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
@@ -53,6 +54,34 @@ esp_err_t audio_beep_set_format(int sample_rate, int channels) {
   return ESP_OK;
 }
 
+static const audio_codec_ctrl_if_t *s_ctrl_if = NULL;
+static const audio_codec_data_if_t *s_data_if = NULL;
+static const audio_codec_gpio_if_t *s_gpio_if = NULL;
+static const audio_codec_if_t *s_codec_if = NULL;
+
+// Releases everything audio_beep_init() may have created, in reverse order.
+// Safe to call at any point, including after a partial init.
+static void audio_release(void) {
+  bool codec_owned_channel = (codec_dev != NULL);
+  if (codec_dev) {
+    esp_codec_dev_close(codec_dev);
+    esp_codec_dev_delete(codec_dev);
+    codec_dev = NULL;
+  }
+  if (s_codec_if) { audio_codec_delete_codec_if(s_codec_if); s_codec_if = NULL; }
+  if (s_data_if)  { audio_codec_delete_data_if(s_data_if);   s_data_if = NULL; }
+  if (s_ctrl_if)  { audio_codec_delete_ctrl_if(s_ctrl_if);   s_ctrl_if = NULL; }
+  if (s_gpio_if)  { audio_codec_delete_gpio_if(s_gpio_if);   s_gpio_if = NULL; }
+  if (tx_handle) {
+    // esp_codec_dev_close() already disabled the channel; only disable it
+    // ourselves after a partial init, or the driver logs "not been enabled".
+    if (!codec_owned_channel) i2s_channel_disable(tx_handle);
+    i2s_del_channel(tx_handle);
+    tx_handle = NULL;
+  }
+  gpio_set_level(PIN_POWER_AMP, 0);
+}
+
 esp_err_t audio_beep_init(void) {
   if (codec_dev) return ESP_OK;
 
@@ -67,7 +96,12 @@ esp_err_t audio_beep_init(void) {
   chan_cfg.dma_desc_num  = 6;
   chan_cfg.dma_frame_num = 1000;
   chan_cfg.auto_clear    = true;
-  ESP_ERROR_CHECK(i2s_new_channel(&chan_cfg, &tx_handle, NULL));
+  if (i2s_new_channel(&chan_cfg, &tx_handle, NULL) != ESP_OK) {
+    ESP_LOGE(TAG, "i2s_new_channel failed");
+    tx_handle = NULL;
+    audio_release();
+    return ESP_FAIL;
+  }
 
   i2s_std_config_t std_cfg = {
     .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(SAMPLE_RATE),
@@ -85,12 +119,17 @@ esp_err_t audio_beep_init(void) {
       },
     },
   };
-  ESP_ERROR_CHECK(i2s_channel_init_std_mode(tx_handle, &std_cfg));
+  if (i2s_channel_init_std_mode(tx_handle, &std_cfg) != ESP_OK) {
+    ESP_LOGE(TAG, "i2s std init failed");
+    audio_release();
+    return ESP_FAIL;
+  }
   i2s_channel_enable(tx_handle);
 
   i2c_master_bus_handle_t i2c_bus = bsp_i2c_get_handle();
   if (!i2c_bus) {
     ESP_LOGE(TAG, "BSP I2C bus not available");
+    audio_release();
     return ESP_FAIL;
   }
 
@@ -99,35 +138,36 @@ esp_err_t audio_beep_init(void) {
     .addr = ES8311_CODEC_DEFAULT_ADDR,
     .bus_handle = i2c_bus,
   };
-  const audio_codec_ctrl_if_t *ctrl_if = audio_codec_new_i2c_ctrl(&i2c_cfg);
+  s_ctrl_if = audio_codec_new_i2c_ctrl(&i2c_cfg);
 
   audio_codec_i2s_cfg_t i2s_cfg = {
     .port = I2S_NUM_0,
     .tx_handle = tx_handle,
   };
-  const audio_codec_data_if_t *data_if = audio_codec_new_i2s_data(&i2s_cfg);
+  s_data_if = audio_codec_new_i2s_data(&i2s_cfg);
 
-  const audio_codec_gpio_if_t *gpio_if = audio_codec_new_gpio();
+  s_gpio_if = audio_codec_new_gpio();
 
   es8311_codec_cfg_t es8311_cfg = {
-    .ctrl_if = ctrl_if,
-    .gpio_if = gpio_if,
+    .ctrl_if = s_ctrl_if,
+    .gpio_if = s_gpio_if,
     .codec_mode = ESP_CODEC_DEV_WORK_MODE_DAC,
     .pa_pin = PIN_POWER_AMP,
     .use_mclk = true,
     .hw_gain.pa_voltage = 5.0,
     .hw_gain.codec_dac_voltage = 3.3,
   };
-  const audio_codec_if_t *codec_if = es8311_codec_new(&es8311_cfg);
+  s_codec_if = es8311_codec_new(&es8311_cfg);
 
   esp_codec_dev_cfg_t dev_cfg = {
     .dev_type = ESP_CODEC_DEV_TYPE_OUT,
-    .codec_if = codec_if,
-    .data_if = data_if,
+    .codec_if = s_codec_if,
+    .data_if = s_data_if,
   };
   codec_dev = esp_codec_dev_new(&dev_cfg);
   if (!codec_dev) {
     ESP_LOGE(TAG, "Failed to create codec device");
+    audio_release();
     return ESP_FAIL;
   }
 
@@ -136,8 +176,12 @@ esp_err_t audio_beep_init(void) {
     .channel = 2,
     .bits_per_sample = 16,
   };
-  ESP_ERROR_CHECK(esp_codec_dev_open(codec_dev, &fs));
-  ESP_ERROR_CHECK(esp_codec_dev_set_out_vol(codec_dev, VOLUME));
+  if (esp_codec_dev_open(codec_dev, &fs) != ESP_CODEC_DEV_OK) {
+    ESP_LOGE(TAG, "codec open failed");
+    audio_release();
+    return ESP_FAIL;
+  }
+  esp_codec_dev_set_out_vol(codec_dev, VOLUME);
 
   ESP_LOGI(TAG, "ES8311 codec ready");
   return ESP_OK;
@@ -170,14 +214,5 @@ void audio_beep_write_pcm(const int16_t *pcm, size_t bytes) {
 }
 
 void audio_beep_deinit(void) {
-  if (codec_dev) {
-    esp_codec_dev_close(codec_dev);
-    esp_codec_dev_delete(codec_dev);
-    codec_dev = NULL;
-  }
-  if (tx_handle) {
-    i2s_del_channel(tx_handle);
-    tx_handle = NULL;
-  }
-  gpio_set_level(PIN_POWER_AMP, 0);
+  audio_release();
 }
