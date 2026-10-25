@@ -26,6 +26,7 @@
 #include "connectivity.h"
 #include "device_config.h"
 #include "heap_diag.h"
+#include "i18n.h"
 #include "message_service.h"
 #include "weather_client.h"
 
@@ -98,10 +99,10 @@ static void runtime_state_seed(void)
     s_runtime_state.weather_status,
     sizeof(s_runtime_state.weather_status),
     !s_device_config.wifi_ready
-      ? "No Wi-Fi profile found. Tap 'Set Up Wi-Fi' to connect."
+      ? tr("No Wi-Fi profile found. Tap 'Set Up Wi-Fi' to connect.")
       : (s_device_config.location_ready
-          ? "Stored Wi-Fi profile found. Connecting for time sync and live weather..."
-          : "Stored Wi-Fi profile found. Finish location setup for local weather.")
+          ? tr("Stored Wi-Fi profile found. Connecting for time sync and live weather...")
+          : tr("Stored Wi-Fi profile found. Finish location setup for local weather."))
   );
 }
 
@@ -254,7 +255,7 @@ static void weather_service_task(void *arg)
         false,
         NULL,
         false,
-        "No Wi-Fi profile found. Tap 'Set Up Wi-Fi' to connect."
+        tr("No Wi-Fi profile found. Tap 'Set Up Wi-Fi' to connect.")
       );
       vTaskDelay(retry_delay_ticks);
       continue;
@@ -270,7 +271,7 @@ static void weather_service_task(void *arg)
         false,
         NULL,
         false,
-        "Connecting to Wi-Fi..."
+        tr("Connecting to Wi-Fi...")
       );
 
       esp_err_t err = connectivity_init(&s_device_config);
@@ -299,7 +300,7 @@ static void weather_service_task(void *arg)
         false,
         NULL,
         true,
-        "Connecting to Wi-Fi..."
+        tr("Connecting to Wi-Fi...")
       );
 
       esp_err_t err = connectivity_wait_for_wifi(wifi_timeout_ticks);
@@ -311,7 +312,7 @@ static void weather_service_task(void *arg)
           false,
           NULL,
           true,
-          "Still trying to join Wi-Fi..."
+          tr("Still trying to join Wi-Fi...")
         );
         vTaskDelay(retry_delay_ticks);
         continue;
@@ -362,13 +363,13 @@ static void weather_service_task(void *arg)
         false,
         NULL,
         false,
-        "Set your location to enable local weather."
+        tr("Set your location to enable local weather.")
       );
       vTaskDelay(retry_delay_ticks);
       continue;
     }
 
-    runtime_state_update(true, true, true, NULL, false, "Fetching live weather...");
+    runtime_state_update(true, true, true, NULL, false, tr("Fetching live weather..."));
     ESP_LOGI(
       TAG,
       "Requesting live weather for %s,%s (%s units)",
@@ -389,8 +390,8 @@ static void weather_service_task(void *arg)
         NULL,
         true,
         had_previous_weather
-          ? "Weather refresh failed. Showing last update until retry."
-          : "Weather request failed. Retrying..."
+          ? tr("Weather refresh failed. Showing last update until retry.")
+          : tr("Weather request failed. Retrying...")
       );
       vTaskDelay(retry_delay_ticks);
       continue;
@@ -413,6 +414,7 @@ void app_main(void)
   heap_diag("app_main start");
   ESP_ERROR_CHECK(init_nvs());
   ESP_ERROR_CHECK(device_config_load_or_init(&s_device_config));
+  i18n_set_language_code(s_device_config.language);   /* before the UI and weather text are built */
   connectivity_apply_timezone(s_device_config.timezone);
   log_device_clock("Clock after boot timezone apply");
 

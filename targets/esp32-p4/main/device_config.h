@@ -23,6 +23,7 @@ typedef struct {
   char default_clock_face[DEVICE_CONFIG_SHORT_STR_LEN];
   char time_format[DEVICE_CONFIG_SHORT_STR_LEN];
   char units[DEVICE_CONFIG_SHORT_STR_LEN];
+  char language[DEVICE_CONFIG_SHORT_STR_LEN];   /* "en" or "nl" */
   char latitude[DEVICE_CONFIG_COORD_LEN];
   char longitude[DEVICE_CONFIG_COORD_LEN];
   char night_shift_start[DEVICE_CONFIG_TIME_STR_LEN];

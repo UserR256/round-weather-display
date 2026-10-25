@@ -48,6 +48,7 @@
 #include "message_service.h"
 #include "weather_icon_names.h"
 #include "app_ui_alarm.h"
+#include "i18n.h"
 #include "audio_alarm.h"
 
 #define ANALOG_CENTER_X (BSP_LCD_H_RES / 2)
@@ -259,6 +260,7 @@ typedef struct {
   lv_obj_t *setup_device_id_textarea;
   lv_obj_t *setup_keyboard;
   lv_obj_t *setup_message_sharing_button;
+  lv_obj_t *setup_language_button;
   lv_obj_t *setup_face_button;
   lv_obj_t *setup_time_format_button;
   lv_obj_t *setup_leading_zero_button;
@@ -343,7 +345,6 @@ typedef struct {
   lv_obj_t *radio_prev_button;
   lv_obj_t *radio_next_button;
   lv_obj_t *radio_station_label;
-  lv_obj_t *radio_hint_label;
   lv_obj_t *message_face;
   lv_obj_t *message_title_label;
   lv_obj_t *message_card;
@@ -412,6 +413,17 @@ static const char *const MONTH_NAMES[] = {
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
 };
+/* "Oct 25" in English, "25 Okt" in Dutch. */
+static void format_short_date(char *out, size_t out_size, int month_index, int day)
+{
+  const char *month = tr(MONTH_NAMES[month_index]);
+  if (i18n_language() == I18N_NL) {
+    snprintf(out, out_size, "%d %s", day, month);
+  } else {
+    snprintf(out, out_size, "%s %d", month, day);
+  }
+}
+
 static const char *const SETUP_KEYBOARD_LOWER_MAP[] = {
   "1#", "q", "w", "e", "r", "t", "y", "u", "i", "o", "p", LV_SYMBOL_BACKSPACE, "\n",
   "ABC", "a", "s", "d", "f", "g", "h", "j", "k", "l", LV_SYMBOL_NEW_LINE, "\n",
@@ -1281,8 +1293,8 @@ static void refresh_setup_settings_buttons(void)
     snprintf(
       text,
       sizeof(text),
-      "Home Screen: %s",
-      strings_equal_ignore_case(s_ui.setup_edit_config.default_clock_face, "analog") ? "Analog" : "Digital"
+      tr("Home Screen: %s"),
+      strings_equal_ignore_case(s_ui.setup_edit_config.default_clock_face, "analog") ? tr("Analog") : tr("Digital")
     );
     set_setup_button_text(s_ui.setup_face_button, text);
   }
@@ -1291,8 +1303,8 @@ static void refresh_setup_settings_buttons(void)
     snprintf(
       text,
       sizeof(text),
-      "Time Format: %s",
-      strings_equal_ignore_case(s_ui.setup_edit_config.time_format, "24") ? "24-hour" : "12-hour"
+      tr("Time Format: %s"),
+      strings_equal_ignore_case(s_ui.setup_edit_config.time_format, "24") ? tr("24-hour") : tr("12-hour")
     );
     set_setup_button_text(s_ui.setup_time_format_button, text);
   }
@@ -1301,8 +1313,8 @@ static void refresh_setup_settings_buttons(void)
     snprintf(
       text,
       sizeof(text),
-      "Leading Zero: %s",
-      s_ui.setup_edit_config.leading_zero_12h ? "On" : "Off"
+      tr("Leading Zero: %s"),
+      s_ui.setup_edit_config.leading_zero_12h ? tr("On") : tr("Off")
     );
     set_setup_button_text(s_ui.setup_leading_zero_button, text);
   }
@@ -1311,8 +1323,8 @@ static void refresh_setup_settings_buttons(void)
     snprintf(
       text,
       sizeof(text),
-      "Units: %s",
-      strings_equal_ignore_case(s_ui.setup_edit_config.units, "metric") ? "Metric" : "Imperial"
+      tr("Units: %s"),
+      strings_equal_ignore_case(s_ui.setup_edit_config.units, "metric") ? tr("Metric") : tr("Imperial")
     );
     set_setup_button_text(s_ui.setup_units_button, text);
   }
@@ -1321,8 +1333,8 @@ static void refresh_setup_settings_buttons(void)
     snprintf(
       text,
       sizeof(text),
-      "Night Shift: %s",
-      s_ui.setup_edit_config.night_shift_enabled ? "On" : "Off"
+      tr("Night Shift: %s"),
+      s_ui.setup_edit_config.night_shift_enabled ? tr("On") : tr("Off")
     );
     set_setup_button_text(s_ui.setup_night_shift_button, text);
   }
@@ -1331,18 +1343,30 @@ static void refresh_setup_settings_buttons(void)
     snprintf(
       text,
       sizeof(text),
-      "House Messages: %s",
-      strings_equal_ignore_case(s_ui.setup_edit_config.message_sharing, "shared") ? "Shared" : "Single"
+      tr("House Messages: %s"),
+      strings_equal_ignore_case(s_ui.setup_edit_config.message_sharing, "shared") ? tr("Shared") : tr("Single")
     );
     set_setup_button_text(s_ui.setup_message_sharing_button, text);
+  }
+
+  if (s_ui.setup_language_button != NULL) {
+    /* The value is always shown in its own language so it can be found again
+     * after an accidental switch. The change applies after Save & Restart. */
+    snprintf(
+      text,
+      sizeof(text),
+      tr("Language: %s"),
+      strings_equal_ignore_case(s_ui.setup_edit_config.language, "nl") ? "Nederlands" : "English"
+    );
+    set_setup_button_text(s_ui.setup_language_button, text);
   }
 }
 
 static const char *default_location_prompt_text(void)
 {
   return s_ui.setup_edit_config.location_ready
-    ? "Update the weather location if you want to move this display."
-    : "Enter a city and state, like Cincinnati, Ohio. We'll fill in timezone and coordinates automatically.";
+    ? tr("Update the weather location if you want to move this display.")
+    : tr("Enter a city and state, like Cincinnati, Ohio. We'll fill in timezone and coordinates automatically.");
 }
 
 static void schedule_setup_restart(void)
@@ -1423,7 +1447,7 @@ static void show_setup_scan_panel(void)
   }
 
   if (s_ui.setup_scan_nav_button != NULL) {
-    set_setup_button_text(s_ui.setup_scan_nav_button, s_ui.setup_edit_config.wifi_ready ? "Back" : "Cancel");
+    set_setup_button_text(s_ui.setup_scan_nav_button, s_ui.setup_edit_config.wifi_ready ? tr("Back") : tr("Cancel"));
   }
 
   hide_setup_keyboard();
@@ -1519,8 +1543,8 @@ static void setup_network_select_event_cb(lv_event_t *event)
     true,
     network->requires_password,
     network->requires_password
-      ? "Network selected. Enter the password, then save to restart."
-      : "Open network selected. The password can stay blank."
+      ? tr("Network selected. Enter the password, then save to restart.")
+      : tr("Open network selected. The password can stay blank.")
   );
 }
 
@@ -1543,7 +1567,7 @@ static void populate_setup_network_list(void)
       &lv_font_montserrat_18,
       color_text_muted(),
       LV_TEXT_ALIGN_CENTER,
-      "Scanning nearby networks..."
+      tr("Scanning nearby networks...")
     );
     lv_obj_set_width(label, LV_PCT(100));
     return;
@@ -1555,7 +1579,7 @@ static void populate_setup_network_list(void)
       &lv_font_montserrat_18,
       color_text_muted(),
       LV_TEXT_ALIGN_CENTER,
-      "No nearby networks found.\nRefresh the scan or use Manual Network."
+      tr("No nearby networks found.\nRefresh the scan or use Manual Network.")
     );
     lv_obj_set_width(label, LV_PCT(100));
     lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
@@ -1595,7 +1619,7 @@ static void populate_setup_network_list(void)
       meta_text,
       sizeof(meta_text),
       "%s %ddBm",
-      network->requires_password ? "Secured" : "Open",
+      network->requires_password ? tr("Secured") : tr("Open"),
       network->rssi
     );
     create_label(button, LV_FONT_DEFAULT, color_text_muted(), LV_TEXT_ALIGN_RIGHT, meta_text);
@@ -1622,15 +1646,15 @@ static void setup_scan_task(void *arg)
       populate_setup_network_list();
 
       if (result_count == 0) {
-        update_setup_scan_status("No nearby networks found yet.", color_text_muted());
+        update_setup_scan_status(tr("No nearby networks found yet."), color_text_muted());
       } else {
-        update_setup_scan_status("Choose your Wi-Fi network, or use Manual Network.", color_text_muted());
+        update_setup_scan_status(tr("Choose your Wi-Fi network, or use Manual Network."), color_text_muted());
       }
     } else {
       char error_text[96];
       s_ui.scan_result_count = 0;
       populate_setup_network_list();
-      snprintf(error_text, sizeof(error_text), "Wi-Fi scan failed: %s", esp_err_to_name(err));
+      snprintf(error_text, sizeof(error_text), tr("Wi-Fi scan failed: %s"), esp_err_to_name(err));
       update_setup_scan_status(error_text, color_warning());
     }
 
@@ -1649,7 +1673,7 @@ static void request_setup_scan(void)
   s_ui.setup_scan_in_progress = true;
   s_ui.scan_result_count = 0;
   memset(s_ui.scan_results, 0, sizeof(s_ui.scan_results));
-  update_setup_scan_status("Scanning nearby networks...", color_text_muted());
+  update_setup_scan_status(tr("Scanning nearby networks..."), color_text_muted());
   populate_setup_network_list();
 
   BaseType_t task_created = xTaskCreate(
@@ -1662,7 +1686,7 @@ static void request_setup_scan(void)
   );
   if (task_created != pdPASS) {
     s_ui.setup_scan_in_progress = false;
-    update_setup_scan_status("Could not start the Wi-Fi scan task.", color_warning());
+    update_setup_scan_status(tr("Could not start the Wi-Fi scan task."), color_warning());
     populate_setup_network_list();
   }
 }
@@ -1703,19 +1727,19 @@ static void setup_location_lookup_task(void *arg)
       if (save_err == ESP_OK) {
         s_ui.config_snapshot = updated;
         s_ui.setup_edit_config = updated;
-        update_setup_location_status("Location saved. Restarting for local weather...", color_success());
+        update_setup_location_status(tr("Location saved. Restarting for local weather..."), color_success());
         schedule_setup_restart();
       } else {
         char error_text[80];
-        snprintf(error_text, sizeof(error_text), "Save failed: %s", esp_err_to_name(save_err));
+        snprintf(error_text, sizeof(error_text), tr("Save failed: %s"), esp_err_to_name(save_err));
         update_setup_location_status(error_text, color_warning());
       }
     } else if (lookup_err == ESP_ERR_NOT_FOUND) {
-      update_setup_location_status("Location not found. Try City, State.", color_warning());
+      update_setup_location_status(tr("Location not found. Try City, State."), color_warning());
       show_setup_keyboard(s_ui.setup_location_textarea);
     } else {
       char error_text[96];
-      snprintf(error_text, sizeof(error_text), "Lookup failed: %s", esp_err_to_name(lookup_err));
+      snprintf(error_text, sizeof(error_text), tr("Lookup failed: %s"), esp_err_to_name(lookup_err));
       update_setup_location_status(error_text, color_warning());
       show_setup_keyboard(s_ui.setup_location_textarea);
     }
@@ -1748,8 +1772,8 @@ static void open_setup_overlay(void)
   lv_obj_move_foreground(s_ui.setup_overlay);
 
   if (!s_ui.config_snapshot.wifi_ready) {
-    update_setup_status("This first pass configures Wi-Fi only.", color_text_muted());
-    update_setup_scan_status("Scanning nearby networks...", color_text_muted());
+    update_setup_status(tr("This first pass configures Wi-Fi only."), color_text_muted());
+    update_setup_scan_status(tr("Scanning nearby networks..."), color_text_muted());
     show_setup_scan_panel();
     request_setup_scan();
     return;
@@ -1843,6 +1867,19 @@ static void setup_message_sharing_toggle_event_cb(lv_event_t *event)
   refresh_setup_settings_buttons();
 }
 
+static void setup_language_toggle_event_cb(lv_event_t *event)
+{
+  (void) event;
+
+  snprintf(
+    s_ui.setup_edit_config.language,
+    sizeof(s_ui.setup_edit_config.language),
+    "%s",
+    strings_equal_ignore_case(s_ui.setup_edit_config.language, "nl") ? "en" : "nl"
+  );
+  refresh_setup_settings_buttons();
+}
+
 static void setup_manual_network_event_cb(lv_event_t *event)
 {
   (void) event;
@@ -1852,7 +1889,7 @@ static void setup_manual_network_event_cb(lv_event_t *event)
     s_ui.setup_edit_config.wifi_password,
     false,
     true,
-    "Enter the network name, then add the password and save to restart."
+    tr("Enter the network name, then add the password and save to restart.")
   );
 }
 
@@ -1898,7 +1935,7 @@ static void setup_save_event_cb(lv_event_t *event)
   const char *ssid = lv_textarea_get_text(s_ui.setup_ssid_textarea);
   const char *password = lv_textarea_get_text(s_ui.setup_password_textarea);
   if (ssid == NULL || ssid[0] == '\0') {
-    update_setup_status("Enter a Wi-Fi network name before saving.", color_warning());
+    update_setup_status(tr("Enter a Wi-Fi network name before saving."), color_warning());
     show_setup_keyboard(s_ui.setup_ssid_textarea);
     return;
   }
@@ -1910,14 +1947,14 @@ static void setup_save_event_cb(lv_event_t *event)
   esp_err_t err = device_config_save(&updated);
   if (err != ESP_OK) {
     char error_text[80];
-    snprintf(error_text, sizeof(error_text), "Save failed: %s", esp_err_to_name(err));
+    snprintf(error_text, sizeof(error_text), tr("Save failed: %s"), esp_err_to_name(err));
     update_setup_status(error_text, color_warning());
     return;
   }
 
   s_ui.config_snapshot = updated;
   s_ui.setup_edit_config = updated;
-  update_setup_status("Saved. Restarting to join Wi-Fi...", color_success());
+  update_setup_status(tr("Saved. Restarting to join Wi-Fi..."), color_success());
   schedule_setup_restart();
 }
 
@@ -1939,7 +1976,7 @@ static void setup_location_save_event_cb(lv_event_t *event)
       && offline_query[0] != '\0'
       && strcmp(offline_query, s_ui.config_snapshot.location) != 0;
     if (location_changed_while_offline || !s_ui.config_snapshot.location_ready) {
-      update_setup_location_status("Wait for Wi-Fi to connect before saving a new location.", color_warning());
+      update_setup_location_status(tr("Wait for Wi-Fi to connect before saving a new location."), color_warning());
       return;
     }
   }
@@ -1950,20 +1987,20 @@ static void setup_location_save_event_cb(lv_event_t *event)
   device_config_t pending_config = s_ui.setup_edit_config;
 
   if (room_name == NULL || room_name[0] == '\0') {
-    update_setup_location_status("Enter a room name before saving.", color_warning());
+    update_setup_location_status(tr("Enter a room name before saving."), color_warning());
     show_setup_keyboard(s_ui.setup_room_name_textarea);
     return;
   }
 
   if (device_id == NULL || device_id[0] == '\0') {
-    update_setup_location_status("Enter a device ID before saving.", color_warning());
+    update_setup_location_status(tr("Enter a device ID before saving."), color_warning());
     show_setup_keyboard(s_ui.setup_device_id_textarea);
     return;
   }
 
   if (strings_equal_ignore_case(pending_config.message_sharing, "shared")
       && strings_equal_ignore_case(device_id, "clock-esp32-p4")) {
-    update_setup_location_status("Set a unique device ID before enabling shared mode.", color_warning());
+    update_setup_location_status(tr("Set a unique device ID before enabling shared mode."), color_warning());
     show_setup_keyboard(s_ui.setup_device_id_textarea);
     return;
   }
@@ -1981,7 +2018,7 @@ static void setup_location_save_event_cb(lv_event_t *event)
 
   if (!location_changed) {
     if ((query == NULL || query[0] == '\0') && !s_ui.config_snapshot.location_ready) {
-      update_setup_location_status("Enter a City, State before saving.", color_warning());
+      update_setup_location_status(tr("Enter a City, State before saving."), color_warning());
       show_setup_keyboard(s_ui.setup_location_textarea);
       return;
     }
@@ -1989,27 +2026,27 @@ static void setup_location_save_event_cb(lv_event_t *event)
     esp_err_t save_err = device_config_save(&pending_config);
     if (save_err != ESP_OK) {
       char error_text[80];
-      snprintf(error_text, sizeof(error_text), "Save failed: %s", esp_err_to_name(save_err));
+      snprintf(error_text, sizeof(error_text), tr("Save failed: %s"), esp_err_to_name(save_err));
       update_setup_location_status(error_text, color_warning());
       return;
     }
 
     s_ui.config_snapshot = pending_config;
     s_ui.setup_edit_config = pending_config;
-    update_setup_location_status("Settings saved. Restarting...", color_success());
+    update_setup_location_status(tr("Settings saved. Restarting..."), color_success());
     schedule_setup_restart();
     return;
   }
 
   if (query == NULL || query[0] == '\0') {
-    update_setup_location_status("Enter a City, State before saving.", color_warning());
+    update_setup_location_status(tr("Enter a City, State before saving."), color_warning());
     show_setup_keyboard(s_ui.setup_location_textarea);
     return;
   }
 
   setup_location_lookup_request_t *request = calloc(1, sizeof(*request));
   if (request == NULL) {
-    update_setup_location_status("Could not start the location lookup.", color_warning());
+    update_setup_location_status(tr("Could not start the location lookup."), color_warning());
     return;
   }
 
@@ -2018,7 +2055,7 @@ static void setup_location_save_event_cb(lv_event_t *event)
 
   s_ui.setup_location_lookup_in_progress = true;
   hide_setup_keyboard();
-  update_setup_location_status("Looking up your location...", color_text_muted());
+  update_setup_location_status(tr("Looking up your location..."), color_text_muted());
 
   BaseType_t task_created = xTaskCreate(
     setup_location_lookup_task,
@@ -2031,7 +2068,7 @@ static void setup_location_save_event_cb(lv_event_t *event)
   if (task_created != pdPASS) {
     s_ui.setup_location_lookup_in_progress = false;
     free(request);
-    update_setup_location_status("Could not start the location lookup.", color_warning());
+    update_setup_location_status(tr("Could not start the location lookup."), color_warning());
   }
 }
 
@@ -2065,14 +2102,14 @@ static void update_setup_prompt(const device_config_t *config)
   }
 
   if (!config->wifi_ready) {
-    set_setup_button_text(s_ui.setup_prompt_button, "Set Up Wi-Fi");
+    set_setup_button_text(s_ui.setup_prompt_button, tr("Set Up Wi-Fi"));
     lv_obj_clear_flag(s_ui.setup_prompt_button, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_ui.setup_settings_button, LV_OBJ_FLAG_HIDDEN);
     return;
   }
 
   if (!config->location_ready) {
-    set_setup_button_text(s_ui.setup_prompt_button, "Set Location");
+    set_setup_button_text(s_ui.setup_prompt_button, tr("Set Location"));
     lv_obj_clear_flag(s_ui.setup_prompt_button, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_ui.setup_settings_button, LV_OBJ_FLAG_HIDDEN);
     return;
@@ -2142,11 +2179,11 @@ static time_t resolve_display_time(const device_config_t *config, uint32_t uptim
 
 static void update_pending_weather_labels(bool location_ready)
 {
-  const char *summary = location_ready ? "Loading Weather" : "Set Location";
-  const char *detail = location_ready ? "Please wait" : "Save City/State";
-  const char *forecast_summary = location_ready ? "Updating..." : "Finish setup";
+  const char *summary = location_ready ? tr("Loading Weather") : tr("Set Location");
+  const char *detail = location_ready ? tr("Please wait") : tr("Save City/State");
+  const char *forecast_summary = location_ready ? tr("Updating...") : tr("Finish setup");
   const char *pending_temp = "--";
-  const char *pending_range = location_ready ? "Please wait" : "Local weather off";
+  const char *pending_range = location_ready ? tr("Please wait") : tr("Local weather off");
   const lv_image_dsc_t *fallback_icon = weather_icon_image_for_name(weather_icon_fallback_name());
 
   if (s_ui.analog_summary_label != NULL) {
@@ -2176,7 +2213,7 @@ static void update_pending_weather_labels(bool location_ready)
     }
   }
 
-  set_label_text(s_ui.forecast_tomorrow_day_label, "Tomorrow");
+  set_label_text(s_ui.forecast_tomorrow_day_label, tr("Tomorrow"));
   if (s_ui.forecast_tomorrow_summary_label != NULL) {
     set_label_text(s_ui.forecast_tomorrow_summary_label, forecast_summary);
   }
@@ -2210,7 +2247,7 @@ static void refresh_forecast_labels(time_t display_time)
       s_ui.forecast_labels[i],
       sizeof(s_ui.forecast_labels[i]),
       "%s",
-      WEEKDAY_SHORT[label_time.tm_wday]
+      tr(WEEKDAY_SHORT[label_time.tm_wday])
     );
   }
 }
@@ -3048,7 +3085,7 @@ static void build_forecast_view(lv_obj_t *parent)
   lv_obj_align(s_ui.forecast_tomorrow_frame, LV_ALIGN_TOP_MID, 0, FORECAST_TOMORROW_FRAME_TOP);
 
   s_ui.forecast_tomorrow_day_label = create_label(
-    forecast_face, &lv_font_montserrat_24, color_text_primary(), LV_TEXT_ALIGN_CENTER, "Tomorrow"
+    forecast_face, &lv_font_montserrat_24, color_text_primary(), LV_TEXT_ALIGN_CENTER, tr("Tomorrow")
   );
   lv_obj_set_width(s_ui.forecast_tomorrow_day_label, LV_PCT(100));
   lv_obj_align(s_ui.forecast_tomorrow_day_label, LV_ALIGN_TOP_MID, 0, FORECAST_TOMORROW_LABEL_TOP);
@@ -3273,7 +3310,7 @@ static void build_conditions_view(lv_obj_t *parent)
   s_ui.conditions_headline = create_conditions_arc_label(
     face, &s_headline_arc, &lv_font_montserrat_32, color_text_primary(), COND_HEADLINE_RADIUS
   );
-  set_conditions_arc_text(s_ui.conditions_headline, "Checking the weather...", &lv_font_montserrat_32);
+  set_conditions_arc_text(s_ui.conditions_headline, tr("Checking the weather..."), &lv_font_montserrat_32);
   s_ui.conditions_detail = create_conditions_arc_label(
     face, &s_detail_arc, &lv_font_montserrat_18, lv_color_hex(0xebf2ff), COND_DETAIL_RADIUS
   );
@@ -3328,7 +3365,7 @@ static void build_conditions_view(lv_obj_t *parent)
     s_ui.conditions_ticks[tick++] = line;
   }
 
-  static const char *const CARDINAL_TEXT[4] = {"N", "E", "S", "W"};
+  const char *const CARDINAL_TEXT[4] = {tr("N"), tr("E"), tr("S"), tr("W")};
   for (int i = 0; i < 4; ++i) {
     double rad = i * 90 * M_PI / 180.0;
     double r = 148 * COND_DIAL_SCALE;
@@ -3407,7 +3444,7 @@ static void build_conditions_view(lv_obj_t *parent)
   lv_obj_set_flex_flow(columns, LV_FLEX_FLOW_ROW);
   lv_obj_set_flex_align(columns, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
 
-  static const char *const COLUMN_LABELS[COND_COLUMN_COUNT] = {"WIND", "PRESSURE", "RAIN"};
+  const char *const COLUMN_LABELS[COND_COLUMN_COUNT] = {tr("WIND"), tr("PRESSURE"), tr("RAIN")};
   const lv_image_dsc_t *column_icons[COND_COLUMN_COUNT] = {
     &conditions_icon_wind, &conditions_icon_pressure, &conditions_icon_rain
   };
@@ -3467,7 +3504,7 @@ static void build_message_view(lv_obj_t *parent)
   clear_container_chrome(s_ui.message_face);
 
   s_ui.message_title_label = create_label(
-    s_ui.message_face, &lv_font_montserrat_32, color_text_primary(), LV_TEXT_ALIGN_CENTER, "Message"
+    s_ui.message_face, &lv_font_montserrat_32, color_text_primary(), LV_TEXT_ALIGN_CENTER, tr("Message")
   );
   lv_obj_set_width(s_ui.message_title_label, LV_PCT(100));
   lv_obj_align(s_ui.message_title_label, LV_ALIGN_TOP_MID, 0, 138);
@@ -3500,13 +3537,13 @@ static void build_message_view(lv_obj_t *parent)
   lv_obj_set_width(s_ui.message_meta_label, LV_PCT(100));
 
   s_ui.message_dismiss_label = create_label(
-    s_ui.message_card, &lv_font_montserrat_18, color_text_subtle(), LV_TEXT_ALIGN_CENTER, "Tap to dismiss"
+    s_ui.message_card, &lv_font_montserrat_18, color_text_subtle(), LV_TEXT_ALIGN_CENTER, tr("Tap to dismiss")
   );
   lv_obj_set_width(s_ui.message_dismiss_label, LV_PCT(100));
   lv_obj_set_style_text_letter_space(s_ui.message_dismiss_label, 1, 0);
 
   s_ui.message_empty_label = create_label(
-    s_ui.message_face, &lv_font_montserrat_48, color_text_muted(), LV_TEXT_ALIGN_CENTER, "No messages"
+    s_ui.message_face, &lv_font_montserrat_48, color_text_muted(), LV_TEXT_ALIGN_CENTER, tr("No messages")
   );
   lv_obj_set_width(s_ui.message_empty_label, 420);
   lv_obj_align(s_ui.message_empty_label, LV_ALIGN_TOP_MID, 0, 318);
@@ -3544,7 +3581,7 @@ static void build_status_stack(lv_obj_t *parent)
 
   s_ui.setup_prompt_button = create_setup_button(
     s_ui.status_stack,
-    "Set Up Wi-Fi",
+    tr("Set Up Wi-Fi"),
     lv_color_hex(0x245289),
     color_accent(),
     setup_prompt_event_cb
@@ -3554,7 +3591,7 @@ static void build_status_stack(lv_obj_t *parent)
 
   s_ui.setup_settings_button = create_setup_button(
     s_ui.status_stack,
-    "Settings",
+    tr("Settings"),
     lv_color_hex(0x17263b),
     color_panel_border(),
     setup_prompt_event_cb
@@ -3608,20 +3645,20 @@ static void refresh_radio_view(void)
   const bool on = state == RADIO_STATE_CONNECTING || state == RADIO_STATE_PLAYING;
   const bool alarm_owns_audio = audio_alarm_is_ringing();
 
-  const char *status = "Off";
+  const char *status = tr("Off");
   if (alarm_owns_audio) {
-    status = "Alarm is ringing";
+    status = tr("Alarm is ringing");
   } else if (state == RADIO_STATE_CONNECTING) {
-    status = "Connecting...";
+    status = tr("Connecting...");
   } else if (state == RADIO_STATE_PLAYING) {
-    status = "Playing";
+    status = tr("Playing");
   } else if (state == RADIO_STATE_FAILED) {
-    status = "Stream unavailable";
+    status = tr("Stream unavailable");
   } else if (state == RADIO_STATE_AUDIO_FAILED) {
-    status = "Audio unavailable";
+    status = tr("Audio unavailable");
   }
   set_label_text(s_ui.radio_status_label, status);
-  set_label_text(s_ui.radio_button_label, on ? "Stop" : "Start");
+  set_label_text(s_ui.radio_button_label, on ? tr("Stop") : tr("Start"));
   lv_obj_set_style_bg_color(s_ui.radio_button, on ? lv_color_hex(0xa33a3a) : lv_color_hex(0x1f6fb5), 0);
 
   const size_t station_index = audio_radio_get_station();
@@ -3666,7 +3703,7 @@ static void radio_button_event_cb(lv_event_t *event)
     audio_radio_stop();
   } else if (audio_radio_start() == ESP_ERR_INVALID_STATE && !audio_alarm_is_ringing()) {
     /* The previous session is still shutting down; a second tap works. */
-    set_label_text(s_ui.radio_status_label, "One moment...");
+    set_label_text(s_ui.radio_status_label, tr("One moment..."));
     return;
   }
   refresh_radio_view();
@@ -3747,9 +3784,6 @@ static void build_radio_view(lv_obj_t *parent)
   );
   lv_obj_set_width(s_ui.radio_status_label, LV_PCT(100));
   lv_obj_align(s_ui.radio_status_label, LV_ALIGN_CENTER, 0, 130);
-
-  lv_obj_set_width(s_ui.radio_hint_label, LV_PCT(100));
-  lv_obj_align(s_ui.radio_hint_label, LV_ALIGN_CENTER, 0, 200);
 }
 
 static void build_night_overlay(lv_obj_t *parent)
@@ -3811,7 +3845,7 @@ static void build_setup_overlay(lv_obj_t *parent)
     &lv_font_montserrat_24,
     color_text_primary(),
     LV_TEXT_ALIGN_CENTER,
-    "Device Setup"
+    tr("Device Setup")
   );
   lv_obj_set_width(title, LV_PCT(100));
   lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 28);
@@ -3821,7 +3855,7 @@ static void build_setup_overlay(lv_obj_t *parent)
     LV_FONT_DEFAULT,
     color_text_muted(),
     LV_TEXT_ALIGN_CENTER,
-    "Connect Wi-Fi, then choose the weather location you want this display to use."
+    tr("Connect Wi-Fi, then choose the weather location you want this display to use.")
   );
   lv_obj_set_width(body, LV_PCT(100));
   lv_label_set_long_mode(body, LV_LABEL_LONG_WRAP);
@@ -3843,7 +3877,7 @@ static void build_setup_overlay(lv_obj_t *parent)
     &lv_font_montserrat_18,
     color_text_primary(),
     LV_TEXT_ALIGN_CENTER,
-    "Nearby Networks"
+    tr("Nearby Networks")
   );
   lv_obj_set_width(scan_title, LV_PCT(100));
 
@@ -3852,7 +3886,7 @@ static void build_setup_overlay(lv_obj_t *parent)
     LV_FONT_DEFAULT,
     color_text_muted(),
     LV_TEXT_ALIGN_CENTER,
-    "Scanning nearby networks..."
+    tr("Scanning nearby networks...")
   );
   lv_obj_set_width(s_ui.setup_scan_status_label, LV_PCT(100));
   lv_label_set_long_mode(s_ui.setup_scan_status_label, LV_LABEL_LONG_WRAP);
@@ -3886,21 +3920,21 @@ static void build_setup_overlay(lv_obj_t *parent)
 
   create_setup_button(
     scan_button_row,
-    "Refresh",
+    tr("Refresh"),
     lv_color_hex(0x17263b),
     color_panel_border(),
     setup_refresh_scan_event_cb
   );
   create_setup_button(
     scan_button_row,
-    "Manual Network",
+    tr("Manual Network"),
     lv_color_hex(0x17263b),
     color_panel_border(),
     setup_manual_network_event_cb
   );
   s_ui.setup_scan_nav_button = create_setup_button(
     scan_button_row,
-    "Cancel",
+    tr("Cancel"),
     lv_color_hex(0x17263b),
     color_panel_border(),
     setup_scan_nav_event_cb
@@ -3923,7 +3957,7 @@ static void build_setup_overlay(lv_obj_t *parent)
     &lv_font_montserrat_18,
     color_text_primary(),
     LV_TEXT_ALIGN_CENTER,
-    "Network Details"
+    tr("Network Details")
   );
   lv_obj_set_width(credentials_title, LV_PCT(100));
 
@@ -3931,7 +3965,7 @@ static void build_setup_overlay(lv_obj_t *parent)
   style_textarea(s_ui.setup_ssid_textarea);
   lv_textarea_set_one_line(s_ui.setup_ssid_textarea, true);
   lv_textarea_set_max_length(s_ui.setup_ssid_textarea, DEVICE_CONFIG_WIFI_LEN - 1);
-  lv_textarea_set_placeholder_text(s_ui.setup_ssid_textarea, "Wi-Fi network name");
+  lv_textarea_set_placeholder_text(s_ui.setup_ssid_textarea, tr("Wi-Fi network name"));
   lv_obj_add_event_cb(s_ui.setup_ssid_textarea, setup_textarea_focus_cb, LV_EVENT_FOCUSED, NULL);
   lv_obj_add_event_cb(s_ui.setup_ssid_textarea, setup_textarea_focus_cb, LV_EVENT_CLICKED, NULL);
 
@@ -3940,7 +3974,7 @@ static void build_setup_overlay(lv_obj_t *parent)
   lv_textarea_set_one_line(s_ui.setup_password_textarea, true);
   lv_textarea_set_max_length(s_ui.setup_password_textarea, DEVICE_CONFIG_WIFI_PASS_LEN - 1);
   lv_textarea_set_password_mode(s_ui.setup_password_textarea, true);
-  lv_textarea_set_placeholder_text(s_ui.setup_password_textarea, "Wi-Fi password");
+  lv_textarea_set_placeholder_text(s_ui.setup_password_textarea, tr("Wi-Fi password"));
   lv_obj_add_event_cb(s_ui.setup_password_textarea, setup_textarea_focus_cb, LV_EVENT_FOCUSED, NULL);
   lv_obj_add_event_cb(s_ui.setup_password_textarea, setup_textarea_focus_cb, LV_EVENT_CLICKED, NULL);
 
@@ -3962,14 +3996,14 @@ static void build_setup_overlay(lv_obj_t *parent)
 
   create_setup_button(
     credentials_button_row,
-    "Back",
+    tr("Back"),
     lv_color_hex(0x17263b),
     color_panel_border(),
     setup_back_event_cb
   );
   create_setup_button(
     credentials_button_row,
-    "Save & Restart",
+    tr("Save & Restart"),
     lv_color_hex(0x245289),
     color_accent(),
     setup_save_event_cb
@@ -3980,7 +4014,7 @@ static void build_setup_overlay(lv_obj_t *parent)
     LV_FONT_DEFAULT,
     color_text_muted(),
     LV_TEXT_ALIGN_CENTER,
-    "This first pass configures Wi-Fi only."
+    tr("This first pass configures Wi-Fi only.")
   );
   lv_obj_set_width(s_ui.setup_status_label, LV_PCT(100));
   lv_label_set_long_mode(s_ui.setup_status_label, LV_LABEL_LONG_WRAP);
@@ -4002,7 +4036,7 @@ static void build_setup_overlay(lv_obj_t *parent)
     &lv_font_montserrat_18,
     color_text_primary(),
     LV_TEXT_ALIGN_CENTER,
-    "Weather Location"
+    tr("Weather Location")
   );
   lv_obj_set_width(location_title, LV_PCT(100));
 
@@ -4010,7 +4044,7 @@ static void build_setup_overlay(lv_obj_t *parent)
   style_textarea(s_ui.setup_location_textarea);
   lv_textarea_set_one_line(s_ui.setup_location_textarea, true);
   lv_textarea_set_max_length(s_ui.setup_location_textarea, DEVICE_CONFIG_STR_LEN - 1);
-  lv_textarea_set_placeholder_text(s_ui.setup_location_textarea, "City, State");
+  lv_textarea_set_placeholder_text(s_ui.setup_location_textarea, tr("City, State"));
   lv_obj_add_event_cb(s_ui.setup_location_textarea, setup_textarea_focus_cb, LV_EVENT_FOCUSED, NULL);
   lv_obj_add_event_cb(s_ui.setup_location_textarea, setup_textarea_focus_cb, LV_EVENT_CLICKED, NULL);
 
@@ -4018,7 +4052,7 @@ static void build_setup_overlay(lv_obj_t *parent)
   style_textarea(s_ui.setup_room_name_textarea);
   lv_textarea_set_one_line(s_ui.setup_room_name_textarea, true);
   lv_textarea_set_max_length(s_ui.setup_room_name_textarea, DEVICE_CONFIG_STR_LEN - 1);
-  lv_textarea_set_placeholder_text(s_ui.setup_room_name_textarea, "Room name");
+  lv_textarea_set_placeholder_text(s_ui.setup_room_name_textarea, tr("Room name"));
   lv_obj_add_event_cb(s_ui.setup_room_name_textarea, setup_textarea_focus_cb, LV_EVENT_FOCUSED, NULL);
   lv_obj_add_event_cb(s_ui.setup_room_name_textarea, setup_textarea_focus_cb, LV_EVENT_CLICKED, NULL);
 
@@ -4026,13 +4060,13 @@ static void build_setup_overlay(lv_obj_t *parent)
   style_textarea(s_ui.setup_device_id_textarea);
   lv_textarea_set_one_line(s_ui.setup_device_id_textarea, true);
   lv_textarea_set_max_length(s_ui.setup_device_id_textarea, DEVICE_CONFIG_STR_LEN - 1);
-  lv_textarea_set_placeholder_text(s_ui.setup_device_id_textarea, "Device ID");
+  lv_textarea_set_placeholder_text(s_ui.setup_device_id_textarea, tr("Device ID"));
   lv_obj_add_event_cb(s_ui.setup_device_id_textarea, setup_textarea_focus_cb, LV_EVENT_FOCUSED, NULL);
   lv_obj_add_event_cb(s_ui.setup_device_id_textarea, setup_textarea_focus_cb, LV_EVENT_CLICKED, NULL);
 
   s_ui.setup_message_sharing_button = create_setup_button(
     s_ui.setup_location_panel,
-    "House Messages: Single",
+    tr("House Messages: Single"),
     lv_color_hex(0x17263b),
     color_panel_border(),
     setup_message_sharing_toggle_event_cb
@@ -4041,7 +4075,7 @@ static void build_setup_overlay(lv_obj_t *parent)
 
   s_ui.setup_face_button = create_setup_button(
     s_ui.setup_location_panel,
-    "Home Screen: Digital",
+    tr("Home Screen: Digital"),
     lv_color_hex(0x17263b),
     color_panel_border(),
     setup_face_toggle_event_cb
@@ -4050,7 +4084,7 @@ static void build_setup_overlay(lv_obj_t *parent)
 
   s_ui.setup_time_format_button = create_setup_button(
     s_ui.setup_location_panel,
-    "Time Format: 12-hour",
+    tr("Time Format: 12-hour"),
     lv_color_hex(0x17263b),
     color_panel_border(),
     setup_time_format_toggle_event_cb
@@ -4059,7 +4093,7 @@ static void build_setup_overlay(lv_obj_t *parent)
 
   s_ui.setup_leading_zero_button = create_setup_button(
     s_ui.setup_location_panel,
-    "Leading Zero: On",
+    tr("Leading Zero: On"),
     lv_color_hex(0x17263b),
     color_panel_border(),
     setup_leading_zero_toggle_event_cb
@@ -4068,7 +4102,7 @@ static void build_setup_overlay(lv_obj_t *parent)
 
   s_ui.setup_units_button = create_setup_button(
     s_ui.setup_location_panel,
-    "Units: Imperial",
+    tr("Units: Imperial"),
     lv_color_hex(0x17263b),
     color_panel_border(),
     setup_units_toggle_event_cb
@@ -4077,16 +4111,25 @@ static void build_setup_overlay(lv_obj_t *parent)
 
   s_ui.setup_night_shift_button = create_setup_button(
     s_ui.setup_location_panel,
-    "Night Shift: Off",
+    tr("Night Shift: Off"),
     lv_color_hex(0x17263b),
     color_panel_border(),
     setup_night_shift_toggle_event_cb
   );
   lv_obj_set_width(s_ui.setup_night_shift_button, LV_PCT(100));
 
+  s_ui.setup_language_button = create_setup_button(
+    s_ui.setup_location_panel,
+    tr("Language"),
+    lv_color_hex(0x17263b),
+    color_panel_border(),
+    setup_language_toggle_event_cb
+  );
+  lv_obj_set_width(s_ui.setup_language_button, LV_PCT(100));
+
   lv_obj_t *alarm_btn = create_setup_button(
     s_ui.setup_location_panel,
-    "Alarm Settings",
+    tr("Alarm Settings"),
     lv_color_hex(0x245289),
     color_accent(),
     NULL
@@ -4113,21 +4156,21 @@ static void build_setup_overlay(lv_obj_t *parent)
 
   create_setup_button(
     location_button_row,
-    "Wi-Fi",
+    tr("Wi-Fi"),
     lv_color_hex(0x17263b),
     color_panel_border(),
     setup_wifi_settings_event_cb
   );
   create_setup_button(
     location_button_row,
-    "Cancel",
+    tr("Cancel"),
     lv_color_hex(0x17263b),
     color_panel_border(),
     setup_cancel_event_cb
   );
   create_setup_button(
     location_button_row,
-    "Save & Restart",
+    tr("Save & Restart"),
     lv_color_hex(0x245289),
     color_accent(),
     setup_location_save_event_cb
@@ -4138,7 +4181,7 @@ static void build_setup_overlay(lv_obj_t *parent)
     LV_FONT_DEFAULT,
     color_text_muted(),
     LV_TEXT_ALIGN_CENTER,
-    "Enter a city and state, like Cincinnati, Ohio. We'll look up timezone and coordinates automatically."
+    tr("Enter a city and state, like Cincinnati, Ohio. We'll look up timezone and coordinates automatically.")
   );
   lv_obj_set_width(s_ui.setup_location_status_label, LV_PCT(100));
   lv_label_set_long_mode(s_ui.setup_location_status_label, LV_LABEL_LONG_WRAP);
@@ -4218,19 +4261,13 @@ static void update_day_labels(const struct tm *local_time)
   char analog_date[16];
   char digital_date[16];
   char digital_date_upper[16];
-  snprintf(analog_date, sizeof(analog_date), "%s %d", MONTH_NAMES[local_time->tm_mon], local_time->tm_mday);
-  snprintf(
-    digital_date,
-    sizeof(digital_date),
-    "%s %d",
-    MONTH_NAMES[local_time->tm_mon],
-    local_time->tm_mday
-  );
+  format_short_date(analog_date, sizeof(analog_date), local_time->tm_mon, local_time->tm_mday);
+  format_short_date(digital_date, sizeof(digital_date), local_time->tm_mon, local_time->tm_mday);
   copy_uppercase_string(digital_date_upper, sizeof(digital_date_upper), digital_date);
 
-  set_label_text(s_ui.analog_day_label, WEEKDAY_NAMES[local_time->tm_wday]);
+  set_label_text(s_ui.analog_day_label, tr(WEEKDAY_NAMES[local_time->tm_wday]));
   set_label_text(s_ui.analog_date_label, analog_date);
-  set_label_text(s_ui.digital_day_label, WEEKDAY_NAMES_UPPER[local_time->tm_wday]);
+  set_label_text(s_ui.digital_day_label, tr(WEEKDAY_NAMES_UPPER[local_time->tm_wday]));
   set_label_text(s_ui.digital_date_label, digital_date_upper);
 }
 
@@ -4318,7 +4355,7 @@ static void update_weather_labels(void)
     s_ui.weather.forecast[0].high,
     s_ui.weather.forecast[0].low
   );
-  set_label_text(s_ui.forecast_tomorrow_day_label, "Tomorrow");
+  set_label_text(s_ui.forecast_tomorrow_day_label, tr("Tomorrow"));
   if (s_ui.forecast_tomorrow_summary_label != NULL) {
     set_label_text(s_ui.forecast_tomorrow_summary_label, s_ui.weather.forecast[0].summary);
   }
@@ -4507,7 +4544,7 @@ static void update_conditions_view(void)
   static const lv_font_t *const VALUE_FONTS[] = {&lv_font_montserrat_24, &lv_font_montserrat_18};
   static const lv_font_t *const READOUT_FONTS[] = {&lv_font_montserrat_18, &lv_font_montserrat_14};
 
-  const char *headline = have ? c->headline : (s_ui.weather.valid ? "Weather unavailable" : "Checking the weather...");
+  const char *headline = have ? c->headline : (s_ui.weather.valid ? tr("Weather unavailable") : tr("Checking the weather..."));
   const char *detail = have && c->has_detail ? c->detail : "";
   set_conditions_arc_text(s_ui.conditions_headline, headline, pick_font_to_fit(headline, HEADLINE_FONTS, 2, COND_HEADLINE_MAX_PX));
   set_conditions_arc_text(s_ui.conditions_detail, detail, pick_font_to_fit(detail, DETAIL_FONTS, 2, COND_DETAIL_MAX_PX));
@@ -4518,7 +4555,7 @@ static void update_conditions_view(void)
     snprintf(speed, sizeof(speed), "%d", c->speed);
   }
   if (have && c->has_gust) {
-    snprintf(gust, sizeof(gust), "gusts to %d %s", c->gust, c->wind_unit);
+    snprintf(gust, sizeof(gust), tr("gusts to %d %s"), c->gust, c->wind_unit);
   }
   set_label_text(s_ui.conditions_speed_label, speed);
   set_label_text(s_ui.conditions_unit_label, have ? c->wind_unit : "");
@@ -4550,7 +4587,7 @@ static void update_conditions_view(void)
 
   bool snow = have && strcmp(c->precip_label, "Snow") == 0;
   lv_image_set_src(s_ui.conditions_column_icons[2], snow ? &conditions_icon_snow : &conditions_icon_rain);
-  set_label_text(s_ui.conditions_column_labels[2], snow ? "SNOW" : "RAIN");
+  set_label_text(s_ui.conditions_column_labels[2], snow ? tr("SNOW") : tr("RAIN"));
 
   bool alert_active = have && c->alert;
   if (alert_active != s_ui.weather_alert_active) {
@@ -4627,13 +4664,13 @@ static void update_clock_status(bool clock_estimated)
   }
 
   if (clock_estimated) {
-    set_label_text(s_ui.clock_status_label, "Clock pending network sync");
+    set_label_text(s_ui.clock_status_label, tr("Clock pending network sync"));
     lv_obj_clear_flag(s_ui.clock_status_label, LV_OBJ_FLAG_HIDDEN);
     return;
   }
 
   if (clock_is_stale()) {
-    set_label_text(s_ui.clock_status_label, "Clock paused");
+    set_label_text(s_ui.clock_status_label, tr("Clock paused"));
     lv_obj_clear_flag(s_ui.clock_status_label, LV_OBJ_FLAG_HIDDEN);
     return;
   }
@@ -4730,10 +4767,10 @@ esp_err_t app_ui_show_boot_screen(const device_config_t *config, bool touch_read
     sizeof(runtime.weather_status),
     "%s",
     !config->wifi_ready
-      ? "No Wi-Fi profile found. Tap 'Set Up Wi-Fi' to connect."
+      ? tr("No Wi-Fi profile found. Tap 'Set Up Wi-Fi' to connect.")
       : (config->location_ready
-          ? "Stored Wi-Fi profile found. Connecting for time sync and live weather..."
-          : "Stored Wi-Fi profile found. Set location for local weather.")
+          ? tr("Stored Wi-Fi profile found. Connecting for time sync and live weather...")
+          : tr("Stored Wi-Fi profile found. Set location for local weather."))
   );
 
   esp_err_t err = app_ui_update_runtime(config, &runtime, 0);

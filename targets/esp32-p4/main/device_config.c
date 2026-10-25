@@ -73,6 +73,7 @@ void device_config_set_defaults(device_config_t *config)
   copy_string(config->location, sizeof(config->location), "Cincinnati,OH,US");
   copy_string(config->timezone, sizeof(config->timezone), "America/New_York");
   copy_string(config->units, sizeof(config->units), "imperial");
+  copy_string(config->language, sizeof(config->language), "en");
   copy_string(config->latitude, sizeof(config->latitude), "39.1031");
   copy_string(config->longitude, sizeof(config->longitude), "-84.5120");
   copy_string(config->message_sharing, sizeof(config->message_sharing), "single");
@@ -217,6 +218,18 @@ esp_err_t device_config_load_or_init(device_config_t *config)
     config->units,
     sizeof(config->units),
     config->units,
+    &dirty
+  );
+  if (err != ESP_OK) {
+    goto exit;
+  }
+
+  err = load_or_seed_string(
+    handle,
+    "language",
+    config->language,
+    sizeof(config->language),
+    config->language,
     &dirty
   );
   if (err != ESP_OK) {
@@ -420,6 +433,11 @@ esp_err_t device_config_save(device_config_t *config)
   }
 
   err = save_string(handle, "units", config->units);
+  if (err != ESP_OK) {
+    goto exit;
+  }
+
+  err = save_string(handle, "language", config->language);
   if (err != ESP_OK) {
     goto exit;
   }

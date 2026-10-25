@@ -11,6 +11,7 @@
 #include "esp_http_client.h"
 #include "esp_log.h"
 #include "forecast_representative.h"
+#include "i18n.h"
 #include "storm_conditions.h"
 #include "weather_icon_names.h"
 
@@ -65,36 +66,36 @@ static void describe_weather_code(
   }
 
   if (thundersnow) {
-    snprintf(out, out_size, "Thundersnow");
+    snprintf(out, out_size, "%s", tr("Thundersnow"));
     return;
   }
 
   if (code == 0) {
-    snprintf(out, out_size, "Clear");
+    snprintf(out, out_size, "%s", tr("Clear"));
   } else if (code == 1) {
-    snprintf(out, out_size, "%s", is_day ? "Mostly Sunny" : "Mostly Clear");
+    snprintf(out, out_size, "%s", is_day ? tr("Mostly Sunny") : tr("Mostly Clear"));
   } else if (code == 2) {
-    snprintf(out, out_size, "Partly Cloudy");
+    snprintf(out, out_size, "%s", tr("Partly Cloudy"));
   } else if (code == 3) {
-    snprintf(out, out_size, "Cloudy");
+    snprintf(out, out_size, "%s", tr("Cloudy"));
   } else if (code == 45 || code == 48) {
-    snprintf(out, out_size, "Foggy");
+    snprintf(out, out_size, "%s", tr("Foggy"));
   } else if (code >= 51 && code <= 57) {
-    snprintf(out, out_size, "Drizzle");
+    snprintf(out, out_size, "%s", tr("Drizzle"));
   } else if (code >= 61 && code <= 65) {
-    snprintf(out, out_size, "Rain");
+    snprintf(out, out_size, "%s", tr("Rain"));
   } else if (code == 66 || code == 67) {
-    snprintf(out, out_size, "Sleet");
+    snprintf(out, out_size, "%s", tr("Sleet"));
   } else if (code >= 71 && code <= 77) {
-    snprintf(out, out_size, "Snow");
+    snprintf(out, out_size, "%s", tr("Snow"));
   } else if (code >= 80 && code <= 82) {
-    snprintf(out, out_size, "%s", is_day ? "Showers" : "Showers");
+    snprintf(out, out_size, "%s", tr("Showers"));
   } else if (code == 85 || code == 86) {
-    snprintf(out, out_size, "Snow Showers");
+    snprintf(out, out_size, "%s", tr("Snow Showers"));
   } else if (code == 95 || code == 96 || code == 99) {
-    snprintf(out, out_size, "Thunderstorm");
+    snprintf(out, out_size, "%s", tr("Thunderstorm"));
   } else {
-    snprintf(out, out_size, "Cloudy");
+    snprintf(out, out_size, "%s", tr("Cloudy"));
   }
 }
 
