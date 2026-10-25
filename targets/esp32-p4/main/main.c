@@ -25,6 +25,7 @@
 #include "bsp_shims.h"
 #include "connectivity.h"
 #include "device_config.h"
+#include "heap_diag.h"
 #include "message_service.h"
 #include "weather_client.h"
 
@@ -317,6 +318,7 @@ static void weather_service_task(void *arg)
       }
 
       ESP_LOGI(TAG, "Wi-Fi association completed");
+      heap_diag("after Wi-Fi up");
       time_synced = connectivity_is_time_valid();
     }
 
@@ -408,6 +410,7 @@ static void weather_service_task(void *arg)
 
 void app_main(void)
 {
+  heap_diag("app_main start");
   ESP_ERROR_CHECK(init_nvs());
   ESP_ERROR_CHECK(device_config_load_or_init(&s_device_config));
   connectivity_apply_timezone(s_device_config.timezone);
@@ -422,6 +425,7 @@ void app_main(void)
   ESP_ERROR_CHECK(connectivity_prepare_runtime());
   ESP_ERROR_CHECK(message_service_init(&s_device_config));
   ESP_ERROR_CHECK(audio_alarm_init());
+  heap_diag("after audio_alarm_init");
 
   ESP_LOGI(
     TAG,
@@ -439,6 +443,7 @@ void app_main(void)
     return;
   }
   (void) display;
+  heap_diag("after bsp_display_start");
 
   bool touch_ready = (bsp_display_get_input_dev() != NULL);
 
@@ -503,6 +508,7 @@ void app_main(void)
   }
 
   ESP_LOGI(TAG, "Display ready, touch %s", touch_ready ? "detected" : "not detected");
+  heap_diag("after boot screen");
 
   BaseType_t ui_task_ok = xTaskCreate(
     ui_heartbeat_task,

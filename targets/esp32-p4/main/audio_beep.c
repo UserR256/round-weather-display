@@ -10,6 +10,8 @@
 #include "esp_codec_dev_defaults.h"
 #include "bsp/esp32_p4_wifi6_touch_lcd_xc.h"
 
+#include "heap_diag.h"
+
 static const char *TAG = "audio_beep";
 
 #define PIN_POWER_AMP  53
@@ -92,6 +94,7 @@ esp_err_t audio_beep_init(void) {
   gpio_config(&io_conf);
   gpio_set_level(PIN_POWER_AMP, 1);
 
+  heap_diag("before i2s alloc");
   i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
   chan_cfg.dma_desc_num  = 6;
   chan_cfg.dma_frame_num = 1000;
