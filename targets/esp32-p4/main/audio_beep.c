@@ -95,17 +95,6 @@ esp_err_t audio_beep_init(void) {
   gpio_set_level(PIN_POWER_AMP, 1);
 
   heap_diag("before i2s alloc");
-  i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
-  chan_cfg.dma_desc_num  = 6;
-  chan_cfg.dma_frame_num = 1000;
-  chan_cfg.auto_clear    = true;
-  if (i2s_new_channel(&chan_cfg, &tx_handle, NULL) != ESP_OK) {
-    ESP_LOGE(TAG, "i2s_new_channel failed");
-    tx_handle = NULL;
-    audio_release();
-    return ESP_FAIL;
-  }
-
   i2s_std_config_t std_cfg = {
     .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(SAMPLE_RATE),
     .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO),
@@ -122,8 +111,34 @@ esp_err_t audio_beep_init(void) {
       },
     },
   };
-  if (i2s_channel_init_std_mode(tx_handle, &std_cfg) != ESP_OK) {
-    ESP_LOGE(TAG, "i2s std init failed");
+
+  // The DMA buffers live in internal RAM, which is scarce once Wi-Fi and the UI
+  // are up (measured: ~30 KB DMA-capable free). Each buffer is 1008 frames x 4
+  // bytes = ~4 KB (23 ms). Prefer 4 buffers (~91 ms, 16 KB) and step down
+  // rather than fail outright; 2 buffers (~46 ms) still plays.
+  static const uint32_t desc_tries[] = {4, 3, 2};
+  bool i2s_ready = false;
+  for (size_t t = 0; t < sizeof(desc_tries) / sizeof(desc_tries[0]) && !i2s_ready; t++) {
+    i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
+    chan_cfg.dma_desc_num  = desc_tries[t];
+    chan_cfg.dma_frame_num = 1000;
+    chan_cfg.auto_clear    = true;
+    if (i2s_new_channel(&chan_cfg, &tx_handle, NULL) != ESP_OK) {
+      tx_handle = NULL;
+      continue;
+    }
+    if (i2s_channel_init_std_mode(tx_handle, &std_cfg) == ESP_OK) {
+      ESP_LOGI(TAG, "I2S ready with %u DMA buffers", (unsigned) desc_tries[t]);
+      i2s_ready = true;
+    } else {
+      ESP_LOGW(TAG, "I2S init with %u DMA buffers failed, trying fewer", (unsigned) desc_tries[t]);
+      i2s_del_channel(tx_handle);   // never enabled, so no disable needed
+      tx_handle = NULL;
+    }
+  }
+  if (!i2s_ready) {
+    ESP_LOGE(TAG, "I2S init failed even with the smallest buffer");
+    heap_diag("i2s alloc failed");
     audio_release();
     return ESP_FAIL;
   }

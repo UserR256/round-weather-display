@@ -123,6 +123,11 @@ static bool radio_open(esp_http_client_handle_t client) {
   return false;
 }
 
+static void *psram_alloc(size_t size) {
+  void *p = heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  return p != NULL ? p : malloc(size);
+}
+
 static void radio_task(void *arg) {
   (void)arg;
 
@@ -133,9 +138,12 @@ static void radio_task(void *arg) {
   };
   esp_http_client_handle_t client = esp_http_client_init(&config);
 
-  mp3dec_t *dec = malloc(sizeof(mp3dec_t));
-  uint8_t *mp3_buf = malloc(MP3_BUF_SIZE);
-  int16_t *pcm = malloc(MINIMP3_MAX_SAMPLES_PER_FRAME * sizeof(int16_t));
+  // Decoder state and buffers go to PSRAM: ~19 KB that would otherwise come out
+  // of the internal RAM the I2S DMA buffers and TLS need (the task stack is
+  // already in PSRAM). Falls back to the normal heap if PSRAM is unavailable.
+  mp3dec_t *dec = psram_alloc(sizeof(mp3dec_t));
+  uint8_t *mp3_buf = psram_alloc(MP3_BUF_SIZE);
+  int16_t *pcm = psram_alloc(MINIMP3_MAX_SAMPLES_PER_FRAME * sizeof(int16_t));
   if (!client || !dec || !mp3_buf || !pcm) {
     ESP_LOGE(TAG, "Failed to allocate radio resources");
     s_radio_manual = false;
@@ -152,6 +160,7 @@ static void radio_task(void *arg) {
   int cur_rate = STREAM_RATE;
   int failures = 0;
   bool gave_up = false;
+  bool audio_failed = false;
 
   while (radio_active()) {
     s_radio_state = RADIO_STATE_CONNECTING;
@@ -162,7 +171,16 @@ static void radio_task(void *arg) {
       continue;
     }
 
-    audio_beep_init();
+    if (audio_beep_init() != ESP_OK) {
+      // Without this check the radio "played" into a closed codec: silent, but
+      // reported as playing.
+      ESP_LOGE(TAG, "Audio output unavailable");
+      esp_http_client_close(client);
+      audio_failed = true;
+      if (++failures >= RADIO_MAX_RETRIES) { gave_up = true; break; }
+      vTaskDelay(pdMS_TO_TICKS(RADIO_RETRY_DELAY_MS));
+      continue;
+    }
     mp3dec_init(dec);
     int mp3_buf_len = 0;
     bool got_audio = false;
@@ -238,7 +256,8 @@ static void radio_task(void *arg) {
   esp_http_client_cleanup(client);
   audio_beep_deinit();
   if (gave_up) s_radio_manual = false;   // the UI shows "failed", not "playing"
-  s_radio_state = gave_up ? RADIO_STATE_FAILED : RADIO_STATE_OFF;
+  s_radio_state = !gave_up ? RADIO_STATE_OFF
+                : (audio_failed ? RADIO_STATE_AUDIO_FAILED : RADIO_STATE_FAILED);
   s_radio_exit_tick = xTaskGetTickCount();
   s_radio_exited_once = true;
   s_radio_task = NULL;

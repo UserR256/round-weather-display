@@ -30,6 +30,7 @@ typedef enum {
   RADIO_STATE_CONNECTING,
   RADIO_STATE_PLAYING,
   RADIO_STATE_FAILED,   // gave up after the retries; stays until the next start
+  RADIO_STATE_AUDIO_FAILED,   // stream is fine but the audio output could not be set up (memory)
 } radio_state_t;
 
 esp_err_t audio_radio_start(void);   // ESP_ERR_INVALID_STATE if still shutting down: try again

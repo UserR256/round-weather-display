@@ -3603,6 +3603,8 @@ static void refresh_radio_view(void)
     status = "Playing";
   } else if (state == RADIO_STATE_FAILED) {
     status = "Stream unavailable";
+  } else if (state == RADIO_STATE_AUDIO_FAILED) {
+    status = "Audio unavailable";
   }
   set_label_text(s_ui.radio_status_label, status);
   set_label_text(s_ui.radio_button_label, on ? "Stop" : "Start");
