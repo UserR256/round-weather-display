@@ -41,6 +41,18 @@ static TaskHandle_t s_radio_task = NULL;
 static TaskHandle_t s_beep_task = NULL;
 static int s_last_triggered_minute = -1;
 
+// Radio started from the UI (not by the alarm).
+static volatile bool s_radio_manual = false;
+static volatile radio_state_t s_radio_state = RADIO_STATE_OFF;
+static TickType_t s_radio_exit_tick = 0;
+static bool s_radio_exited_once = false;
+
+// The radio task runs while the user wants it, or while a radio alarm rings.
+// A beep alarm ringing does not keep it alive.
+static bool radio_active(void) {
+  return s_radio_manual || (s_ringing && s_alarm.type == ALARM_TYPE_RADIO);
+}
+
 static esp_err_t load_from_nvs(void) {
   nvs_handle_t nvs;
   esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &nvs);
@@ -74,6 +86,8 @@ static esp_err_t save_to_nvs(void) {
 
 static void beep_task(void *arg) {
   (void)arg;
+  // A manual radio session must release the codec first (it exits on its own).
+  for (int i = 0; i < 100 && s_radio_task; i++) vTaskDelay(pdMS_TO_TICKS(20));
   audio_beep_init();
   while (s_ringing) {
     audio_beep_play(1000, 250);
@@ -124,6 +138,10 @@ static void radio_task(void *arg) {
   int16_t *pcm = malloc(MINIMP3_MAX_SAMPLES_PER_FRAME * sizeof(int16_t));
   if (!client || !dec || !mp3_buf || !pcm) {
     ESP_LOGE(TAG, "Failed to allocate radio resources");
+    s_radio_manual = false;
+    s_radio_state = RADIO_STATE_FAILED;
+    s_radio_exit_tick = xTaskGetTickCount();
+    s_radio_exited_once = true;
     free(dec); free(mp3_buf); free(pcm);
     if (client) esp_http_client_cleanup(client);
     s_radio_task = NULL;
@@ -133,10 +151,12 @@ static void radio_task(void *arg) {
 
   int cur_rate = STREAM_RATE;
   int failures = 0;
+  bool gave_up = false;
 
-  while (s_ringing) {
+  while (radio_active()) {
+    s_radio_state = RADIO_STATE_CONNECTING;
     if (!radio_open(client)) {
-      if (++failures >= RADIO_MAX_RETRIES) break;
+      if (++failures >= RADIO_MAX_RETRIES) { gave_up = true; break; }
       ESP_LOGW(TAG, "Retry %d/%d", failures, RADIO_MAX_RETRIES);
       vTaskDelay(pdMS_TO_TICKS(RADIO_RETRY_DELAY_MS));
       continue;
@@ -147,7 +167,7 @@ static void radio_task(void *arg) {
     int mp3_buf_len = 0;
     bool got_audio = false;
 
-    while (s_ringing) {
+    while (radio_active()) {
       if (mp3_buf_len < MP3_REFILL_AT) {
         int n = esp_http_client_read(client, (char *)(mp3_buf + mp3_buf_len),
                                      MP3_BUF_SIZE - mp3_buf_len);
@@ -161,6 +181,7 @@ static void radio_task(void *arg) {
 
       if (samples > 0) {
         got_audio = true;
+        if (radio_active()) s_radio_state = RADIO_STATE_PLAYING;
         if (info.hz != cur_rate) {
           if (audio_beep_set_format(info.hz, 2) == ESP_OK) cur_rate = info.hz;
         }
@@ -186,16 +207,17 @@ static void radio_task(void *arg) {
     }
 
     esp_http_client_close(client);
-    if (!s_ringing) break;
+    if (!radio_active()) break;
 
     failures = got_audio ? 1 : failures + 1;
-    if (failures >= RADIO_MAX_RETRIES) break;
+    if (failures >= RADIO_MAX_RETRIES) { gave_up = true; break; }
     ESP_LOGW(TAG, "Stream lost, reconnecting (%d/%d)", failures, RADIO_MAX_RETRIES);
     vTaskDelay(pdMS_TO_TICKS(RADIO_RETRY_DELAY_MS));
   }
 
-  if (s_ringing) {
-    ESP_LOGE(TAG, "Radio failed, falling back to beep");
+  if (gave_up) ESP_LOGE(TAG, "Radio failed");
+  if (gave_up && s_ringing && s_alarm.type == ALARM_TYPE_RADIO) {
+    ESP_LOGE(TAG, "Falling back to beep");
     if (audio_beep_init() == ESP_OK) {
       if (cur_rate != STREAM_RATE && audio_beep_set_format(STREAM_RATE, 2) == ESP_OK) {
         cur_rate = STREAM_RATE;
@@ -215,23 +237,69 @@ static void radio_task(void *arg) {
   free(pcm);
   esp_http_client_cleanup(client);
   audio_beep_deinit();
+  if (gave_up) s_radio_manual = false;   // the UI shows "failed", not "playing"
+  s_radio_state = gave_up ? RADIO_STATE_FAILED : RADIO_STATE_OFF;
+  s_radio_exit_tick = xTaskGetTickCount();
+  s_radio_exited_once = true;
   s_radio_task = NULL;
   vTaskDelete(NULL);
 }
 
+// Creates the radio task (stack in PSRAM, reused). The task control block is
+// static, so it must not be reused before the idle task has freed the previous
+// task; wait out a short guard time after the last exit.
+static bool launch_radio_task(bool may_wait) {
+  if (s_radio_task) return true;   // already running (e.g. radio alarm taking over a manual session)
+
+  if (s_radio_exited_once) {
+    TickType_t since = xTaskGetTickCount() - s_radio_exit_tick;
+    if (since < pdMS_TO_TICKS(300)) {
+      if (!may_wait) return false;
+      vTaskDelay(pdMS_TO_TICKS(300) - since);
+    }
+  }
+  if (!s_radio_stack) {
+    s_radio_stack = heap_caps_malloc(RADIO_STACK_SIZE, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  }
+  if (!s_radio_stack) {
+    ESP_LOGE(TAG, "No PSRAM for radio stack");
+    return false;
+  }
+  s_radio_task = xTaskCreateStatic(radio_task, "radio", RADIO_STACK_SIZE,
+                                   NULL, 5, s_radio_stack, &s_radio_tcb);
+  return s_radio_task != NULL;
+}
+
+esp_err_t audio_radio_start(void) {
+  if (s_radio_task || s_ringing) return ESP_ERR_INVALID_STATE;   // busy or the alarm owns the audio
+  s_radio_manual = true;
+  s_radio_state = RADIO_STATE_CONNECTING;
+  if (!launch_radio_task(false)) {
+    s_radio_manual = false;
+    s_radio_state = RADIO_STATE_OFF;
+    return ESP_ERR_INVALID_STATE;   // still shutting down: the caller can simply retry
+  }
+  return ESP_OK;
+}
+
+void audio_radio_stop(void) {
+  s_radio_manual = false;   // the task notices within one frame and shuts down
+  if (!s_ringing) s_radio_state = RADIO_STATE_OFF;
+}
+
+radio_state_t audio_radio_get_state(void) {
+  return s_radio_state;
+}
+
 static void start_alarm_sound(void) {
   s_ringing = true;
+  // The alarm takes over the audio from a manually started radio. For a radio
+  // alarm the running task simply continues; for a beep alarm it shuts down and
+  // beep_task waits for it.
+  s_radio_manual = false;
   if (s_alarm.type == ALARM_TYPE_RADIO) {
-    if (!s_radio_task) {
-      if (!s_radio_stack) {
-        s_radio_stack = heap_caps_malloc(RADIO_STACK_SIZE, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-      }
-      if (s_radio_stack) {
-        s_radio_task = xTaskCreateStatic(radio_task, "radio", RADIO_STACK_SIZE,
-                                         NULL, 5, s_radio_stack, &s_radio_tcb);
-      } else {
-        ESP_LOGE(TAG, "No PSRAM for radio stack");
-      }
+    if (!launch_radio_task(true)) {
+      ESP_LOGE(TAG, "Radio task failed to start");
     }
   } else {
     if (!s_beep_task) {
