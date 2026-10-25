@@ -345,7 +345,6 @@ typedef struct {
   lv_obj_t *radio_prev_button;
   lv_obj_t *radio_next_button;
   lv_obj_t *radio_station_label;
-  lv_obj_t *radio_hint_label;
   lv_obj_t *message_face;
   lv_obj_t *message_title_label;
   lv_obj_t *message_card;
@@ -3785,9 +3784,6 @@ static void build_radio_view(lv_obj_t *parent)
   );
   lv_obj_set_width(s_ui.radio_status_label, LV_PCT(100));
   lv_obj_align(s_ui.radio_status_label, LV_ALIGN_CENTER, 0, 130);
-
-  lv_obj_set_width(s_ui.radio_hint_label, LV_PCT(100));
-  lv_obj_align(s_ui.radio_hint_label, LV_ALIGN_CENTER, 0, 200);
 }
 
 static void build_night_overlay(lv_obj_t *parent)
