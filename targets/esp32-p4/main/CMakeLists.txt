@@ -17,6 +17,7 @@ idf_component_register(
     "audio_alarm.c"
     "connectivity.c"
     "device_config.c"
+    "i18n.c"
     "forecast_representative.c"
     "location_lookup.c"
     "location_scoring.c"

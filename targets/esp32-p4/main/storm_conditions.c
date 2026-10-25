@@ -1,5 +1,18 @@
 #include "storm_conditions.h"
 
+/* On the device the user-facing wording is translated (see i18n.h). The host
+ * parity test (scripts/test-weather-parity.sh) builds this file without
+ * ESP-IDF, where the macros below are the identity, so English output is
+ * unchanged. */
+#ifdef ESP_PLATFORM
+#include "i18n.h"
+#define STORM_TR(s) tr(s)
+#define STORM_NL() (i18n_language() == I18N_NL)
+#else
+#define STORM_TR(s) (s)
+#define STORM_NL() 0
+#endif
+
 #include <ctype.h>
 #include <math.h>
 #include <stdio.h>
@@ -220,15 +233,6 @@ static bool pred_wind_strong(const predicate_ctx_t *ctx, int i)
   return hourly_at(ctx, "wind_speed_10m", i) >= ctx->t->wind_kmh;
 }
 
-static void to_lower_copy(const char *src, char *out, size_t out_size)
-{
-  size_t i = 0;
-  for (; src[i] != '\0' && i + 1 < out_size; ++i) {
-    out[i] = (char) tolower((unsigned char) src[i]);
-  }
-  out[i] = '\0';
-}
-
 static double normalize_degrees(double deg)
 {
   return fmod(fmod(deg, 360.0) + 360.0, 360.0);
@@ -329,7 +333,7 @@ static void add_alert(storm_conditions_t *out, storm_alert_kind_t kind, const ch
     return;
   }
   out->alerts[out->alert_count].kind = kind;
-  snprintf(out->alerts[out->alert_count].label, sizeof(out->alerts[0].label), "%s", label);
+  snprintf(out->alerts[out->alert_count].label, sizeof(out->alerts[0].label), "%s", STORM_TR(label));
   out->alert_count++;
 }
 
@@ -439,24 +443,26 @@ bool storm_conditions_build(
   /* --- Plain-language wording --- */
   bool snow_expected = or_zero(sum_over(field(hourly, "snowfall"), now_i, outlook_i)) > 0;
   const char *precip_word = snow_expected ? "Snow" : "Rain";
-  char precip_word_lower[8];
-  to_lower_copy(precip_word, precip_word_lower, sizeof(precip_word_lower));
+  /* Display wording ("Regen"/"regen"); precip_word itself stays English because
+   * out->precip_label is compared against "Snow" by the UI. */
+  const char *precip_word_t = STORM_TR(precip_word);
+  const char *precip_word_lower_t = STORM_TR(snow_expected ? "snow" : "rain");
 
   const char *pressure_status = NULL;
   const char *pressure_meaning = NULL;
   if (pressure_change.ok) {
     if (pressure_change.value <= -t.pressure_drop_hpa) {
-      pressure_status = "Dropping fast";
-      pressure_meaning = "Can mean a storm is coming";
+      pressure_status = STORM_TR("Dropping fast");
+      pressure_meaning = STORM_TR("Can mean a storm is coming");
     } else if (pressure_falling) {
-      pressure_status = "Dropping";
-      pressure_meaning = "Can mean clouds or rain";
+      pressure_status = STORM_TR("Dropping");
+      pressure_meaning = STORM_TR("Can mean clouds or rain");
     } else if (strcmp(pressure_trend, "rising") == 0) {
-      pressure_status = "Rising";
-      pressure_meaning = "Can mean clearer weather";
+      pressure_status = STORM_TR("Rising");
+      pressure_meaning = STORM_TR("Can mean clearer weather");
     } else {
-      pressure_status = "Steady";
-      pressure_meaning = "Weather likely to stay the same";
+      pressure_status = STORM_TR("Steady");
+      pressure_meaning = STORM_TR("Weather likely to stay the same");
     }
   }
 
@@ -471,30 +477,33 @@ bool storm_conditions_build(
 
   /* Short enough for the narrow rain column; the headline carries timing. */
   if (raining_now) {
-    snprintf(out->precip_status, sizeof(out->precip_status), "%sing", precip_word);
+    snprintf(out->precip_status, sizeof(out->precip_status), "%s", snow_expected ? STORM_TR("Snowing") : STORM_TR("Raining"));
   } else if (precip_likely) {
     if (chance_max.ok) {
-      snprintf(out->precip_status, sizeof(out->precip_status), "%s%% chance", chance_text);
+      snprintf(out->precip_status, sizeof(out->precip_status), STORM_TR("%s%% chance"), chance_text);
     } else {
-      snprintf(out->precip_status, sizeof(out->precip_status), "Likely");
+      snprintf(out->precip_status, sizeof(out->precip_status), "%s", STORM_TR("Likely"));
     }
   } else if (precip_possible) {
-    snprintf(out->precip_status, sizeof(out->precip_status), "%s%% chance", chance_text);
+    snprintf(out->precip_status, sizeof(out->precip_status), STORM_TR("%s%% chance"), chance_text);
   } else {
-    snprintf(out->precip_status, sizeof(out->precip_status), "No %s", precip_word_lower);
+    snprintf(out->precip_status, sizeof(out->precip_status), STORM_TR("No %s"), precip_word_lower_t);
   }
 
   int wet_hours = count_where(&ctx, now_i, outlook_i, pred_wet);
   max_result_t peak_rate = max_over(precipitation, now_i, outlook_i);
   double peak_rate_mm = peak_rate.ok ? peak_rate.value : 0.0;
-  const char *intensity = peak_rate_mm >= t.heavy_precip_mm_hr
-    ? "Heavy"
-    : peak_rate_mm >= MODERATE_PRECIP_MM_HR ? "Steady" : "Light";
+  /* "Steady" means "aanhoudend" for rain but "stabiel" for pressure/wind, so
+   * the intensity word cannot share the generic table entry. */
+  const char *intensity_t = peak_rate_mm >= t.heavy_precip_mm_hr
+    ? STORM_TR("Heavy")
+    : peak_rate_mm >= MODERATE_PRECIP_MM_HR ? (STORM_NL() ? "Aanhoudende" : "Steady") : STORM_TR("Light");
   char precip_spell[STORM_TEXT_LEN] = "";
   bool has_precip_spell = wet_hours > 0;
   if (has_precip_spell) {
-    snprintf(precip_spell, sizeof(precip_spell), "%s %s for about %d hour%s",
-      intensity, precip_word_lower, wet_hours, wet_hours == 1 ? "" : "s");
+    snprintf(precip_spell, sizeof(precip_spell),
+      wet_hours == 1 ? STORM_TR("%s %s for about %d hour") : STORM_TR("%s %s for about %d hours"),
+      intensity_t, precip_word_lower_t, wet_hours);
   }
 
   char outlook_end_hour[12];
@@ -506,10 +515,10 @@ bool storm_conditions_build(
       amount, sizeof(amount)
     );
     out->has_precip_detail = true;
-    snprintf(out->precip_detail, sizeof(out->precip_detail), "About %s %s by %s", amount, out->precip_unit, outlook_end_hour);
+    snprintf(out->precip_detail, sizeof(out->precip_detail), STORM_TR("About %s %s by %s"), amount, out->precip_unit, outlook_end_hour);
   } else if (precip_likely || precip_possible) {
     out->has_precip_detail = true;
-    snprintf(out->precip_detail, sizeof(out->precip_detail), "Light, if any");
+    snprintf(out->precip_detail, sizeof(out->precip_detail), "%s", STORM_TR("Light, if any"));
   }
 
   /* --- Temperature swings --- */
@@ -550,30 +559,32 @@ bool storm_conditions_build(
   bool breezy_now = or_zero(wind_kmh) >= BREEZY_WIND_KMH || or_zero(gust_now_kmh) >= BREEZY_GUST_KMH;
   int wind_ease_i = breezy_now ? end_index_where(&ctx, now_i, outlook_i, pred_breezy) : -1;
   char hour_text[12];
+  bool outlook_steady = false;   /* checked below; the text itself may be translated */
   if (gust_peak.ok && gust_peak.index > now_i && gust_peak.value >= gust_base + PICKING_UP_GUST_KMH) {
     format_hour(times, gust_peak.index, config->time_24h, hour_text, sizeof(hour_text));
-    snprintf(out->outlook_status, sizeof(out->outlook_status), "Picking up");
-    snprintf(out->outlook_detail, sizeof(out->outlook_detail), "Gusts to %d %s by %s",
+    snprintf(out->outlook_status, sizeof(out->outlook_status), "%s", STORM_TR("Picking up"));
+    snprintf(out->outlook_detail, sizeof(out->outlook_detail), STORM_TR("Gusts to %d %s by %s"),
       SPEED(gust_peak.value), out->wind_unit, hour_text);
   } else if (wind_ease_i >= 0) {
     format_hour(times, wind_ease_i, config->time_24h, hour_text, sizeof(hour_text));
-    snprintf(out->outlook_status, sizeof(out->outlook_status), "Easing");
-    snprintf(out->outlook_detail, sizeof(out->outlook_detail), "Calmer by %s", hour_text);
+    snprintf(out->outlook_status, sizeof(out->outlook_status), "%s", STORM_TR("Easing"));
+    snprintf(out->outlook_detail, sizeof(out->outlook_detail), STORM_TR("Calmer by %s"), hour_text);
   } else {
     /* Only mention gusts if something stronger than now is still to come. */
     bool stronger_later = gust_peak.ok && SPEED(gust_peak.value) > SPEED(gust_base);
-    snprintf(out->outlook_status, sizeof(out->outlook_status), "Steady");
+    outlook_steady = true;
+    snprintf(out->outlook_status, sizeof(out->outlook_status), "%s", STORM_TR("Steady"));
     if (stronger_later) {
-      snprintf(out->outlook_detail, sizeof(out->outlook_detail), "Gusts up to %d %s", SPEED(gust_peak.value), out->wind_unit);
+      snprintf(out->outlook_detail, sizeof(out->outlook_detail), STORM_TR("Gusts up to %d %s"), SPEED(gust_peak.value), out->wind_unit);
     } else {
-      snprintf(out->outlook_detail, sizeof(out->outlook_detail), "No big change");
+      snprintf(out->outlook_detail, sizeof(out->outlook_detail), "%s", STORM_TR("No big change"));
     }
   }
 
   /* `when(i)`: "now" or "by 4 PM" */
 #define WHEN(i, buf) do { \
-    if ((i) <= now_i) { snprintf((buf), sizeof(buf), "now"); } \
-    else { char h_[12]; format_hour(times, (i), config->time_24h, h_, sizeof(h_)); snprintf((buf), sizeof(buf), "by %s", h_); } \
+    if ((i) <= now_i) { snprintf((buf), sizeof(buf), "%s", STORM_TR("now")); } \
+    else { char h_[12]; format_hour(times, (i), config->time_24h, h_, sizeof(h_)); snprintf((buf), sizeof(buf), STORM_TR("by %s"), h_); } \
   } while (0)
 
   /* Headline: the single most important thing. Things already happening say
@@ -588,12 +599,12 @@ bool storm_conditions_build(
       int end_i = thunder_i <= now_i ? end_index_where(&ctx, now_i, outlook_i, pred_thunder) : -1;
       if (thunder_i > now_i) {
         WHEN(thunder_i, tail);
-        snprintf(phrase, STORM_TEXT_LEN, "Thunderstorms likely %s", tail);
+        snprintf(phrase, STORM_TEXT_LEN, STORM_TR("Thunderstorms likely %s"), tail);
       } else if (end_i >= 0) {
         format_hour(times, end_i, config->time_24h, hour_text, sizeof(hour_text));
-        snprintf(phrase, STORM_TEXT_LEN, "Thunderstorms until %s", hour_text);
+        snprintf(phrase, STORM_TEXT_LEN, STORM_TR("Thunderstorms until %s"), hour_text);
       } else {
-        snprintf(phrase, STORM_TEXT_LEN, "Thunderstorms now");
+        snprintf(phrase, STORM_TEXT_LEN, "%s", STORM_TR("Thunderstorms now"));
       }
     } else if (kind == STORM_ALERT_GUSTS || kind == STORM_ALERT_WIND) {
       bool is_gusts = kind == STORM_ALERT_GUSTS;
@@ -605,24 +616,24 @@ bool storm_conditions_build(
         WHEN(peak.index, tail);
       } else if (end_i >= 0) {
         format_hour(times, end_i, config->time_24h, hour_text, sizeof(hour_text));
-        snprintf(tail, sizeof(tail), "until %s", hour_text);
+        snprintf(tail, sizeof(tail), STORM_TR("until %s"), hour_text);
       } else {
-        snprintf(tail, sizeof(tail), "now");
+        snprintf(tail, sizeof(tail), "%s", STORM_TR("now"));
       }
-      snprintf(phrase, STORM_TEXT_LEN, "%s up to %d %s %s", is_gusts ? "Gusts" : "Winds", SPEED(peak.value), out->wind_unit, tail);
+      snprintf(phrase, STORM_TEXT_LEN, STORM_TR("%s up to %d %s %s"), is_gusts ? STORM_TR("Gusts") : STORM_TR("Winds"), SPEED(peak.value), out->wind_unit, tail);
     } else if (kind == STORM_ALERT_PRECIP) {
       int end_i = heavy_precip_i <= now_i ? end_index_where(&ctx, now_i, outlook_i, pred_heavy) : -1;
       if (heavy_precip_i > now_i) {
         WHEN(heavy_precip_i, tail);
-        snprintf(phrase, STORM_TEXT_LEN, "%s likely %s", out->alerts[a].label, tail);
+        snprintf(phrase, STORM_TEXT_LEN, STORM_TR("%s likely %s"), out->alerts[a].label, tail);
       } else if (end_i >= 0) {
         format_hour(times, end_i, config->time_24h, hour_text, sizeof(hour_text));
-        snprintf(phrase, STORM_TEXT_LEN, "%s until %s", out->alerts[a].label, hour_text);
+        snprintf(phrase, STORM_TEXT_LEN, STORM_TR("%s until %s"), out->alerts[a].label, hour_text);
       } else {
-        snprintf(phrase, STORM_TEXT_LEN, "%s now", out->alerts[a].label);
+        snprintf(phrase, STORM_TEXT_LEN, STORM_TR("%s now"), out->alerts[a].label);
       }
     } else {
-      snprintf(phrase, STORM_TEXT_LEN, "Pressure dropping fast");
+      snprintf(phrase, STORM_TEXT_LEN, "%s", STORM_TR("Pressure dropping fast"));
     }
     phrase_count++;
   }
@@ -647,50 +658,50 @@ bool storm_conditions_build(
     if (raining_now) {
       if (rain_end_i >= 0) {
         format_hour(times, rain_end_i, config->time_24h, hour_text, sizeof(hour_text));
-        snprintf(out->headline, sizeof(out->headline), "%s ending by %s", precip_word, hour_text);
-        snprintf(out->detail, sizeof(out->detail), "%s %s until then", intensity, precip_word_lower);
+        snprintf(out->headline, sizeof(out->headline), STORM_TR("%s ending by %s"), precip_word_t, hour_text);
+        snprintf(out->detail, sizeof(out->detail), STORM_TR("%s %s until then"), intensity_t, precip_word_lower_t);
       } else {
-        snprintf(out->headline, sizeof(out->headline), "%sing now", precip_word);
-        snprintf(out->detail, sizeof(out->detail), "%s %s for the next %d hours", intensity, precip_word_lower, CONDITIONS_OUTLOOK_HOURS);
+        snprintf(out->headline, sizeof(out->headline), "%s", snow_expected ? STORM_TR("Snowing now") : STORM_TR("Raining now"));
+        snprintf(out->detail, sizeof(out->detail), STORM_TR("%s %s for the next %d hours"), intensity_t, precip_word_lower_t, CONDITIONS_OUTLOOK_HOURS);
       }
     } else if (later_thunder_i >= 0) {
       WHEN(later_thunder_i, tail);
-      snprintf(out->headline, sizeof(out->headline), "Thunderstorms possible %s", tail);
+      snprintf(out->headline, sizeof(out->headline), STORM_TR("Thunderstorms possible %s"), tail);
       out->has_detail = has_precip_spell;
       snprintf(out->detail, sizeof(out->detail), "%s", precip_spell);
     } else if (has_front) {
       format_hour(times, front_index, config->time_24h, hour_text, sizeof(hour_text));
-      snprintf(out->headline, sizeof(out->headline), "Turning much colder by %s", hour_text);
-      snprintf(out->detail, sizeof(out->detail), "About %d\xc2\xb0 colder by then", front_drop);
+      snprintf(out->headline, sizeof(out->headline), STORM_TR("Turning much colder by %s"), hour_text);
+      snprintf(out->detail, sizeof(out->detail), STORM_TR("About %d\xc2\xb0 colder by then"), front_drop);
     } else if (later_gust_i >= 0) {
       WHEN(gust_peak.index, tail);
-      snprintf(out->headline, sizeof(out->headline), "Windy later");
-      snprintf(out->detail, sizeof(out->detail), "Gusts up to %d %s %s", SPEED(gust_peak.value), out->wind_unit, tail);
+      snprintf(out->headline, sizeof(out->headline), "%s", STORM_TR("Windy later"));
+      snprintf(out->detail, sizeof(out->detail), STORM_TR("Gusts up to %d %s %s"), SPEED(gust_peak.value), out->wind_unit, tail);
     } else if (precip_likely) {
       if (wet_i >= 0) {
         WHEN(wet_i, tail);
       } else {
-        snprintf(tail, sizeof(tail), "later");
+        snprintf(tail, sizeof(tail), "%s", STORM_TR("later"));
       }
-      snprintf(out->headline, sizeof(out->headline), "%s likely %s", precip_word, tail);
+      snprintf(out->headline, sizeof(out->headline), STORM_TR("%s likely %s"), precip_word_t, tail);
       out->has_detail = has_precip_spell;
       snprintf(out->detail, sizeof(out->detail), "%s", precip_spell);
     } else if (precip_possible) {
-      snprintf(out->headline, sizeof(out->headline), "Chance of %s later", precip_word_lower);
-      snprintf(out->detail, sizeof(out->detail), "%s%% over the next %d hours", chance_text, CONDITIONS_OUTLOOK_HOURS);
+      snprintf(out->headline, sizeof(out->headline), STORM_TR("Chance of %s later"), precip_word_lower_t);
+      snprintf(out->detail, sizeof(out->detail), STORM_TR("%s%% over the next %d hours"), chance_text, CONDITIONS_OUTLOOK_HOURS);
     } else if (has_swing) {
-      snprintf(out->headline, sizeof(out->headline), "Much %s tomorrow", swing_delta < 0 ? "colder" : "warmer");
-      snprintf(out->detail, sizeof(out->detail), "High of %d\xc2\xb0, %d\xc2\xb0 today", swing_high, swing_today);
+      snprintf(out->headline, sizeof(out->headline), STORM_TR("Much %s tomorrow"), swing_delta < 0 ? STORM_TR("colder") : STORM_TR("warmer"));
+      snprintf(out->detail, sizeof(out->detail), STORM_TR("High of %d\xc2\xb0, %d\xc2\xb0 today"), swing_high, swing_today);
     } else if (pressure_falling) {
-      snprintf(out->headline, sizeof(out->headline), "Dry for now");
-      snprintf(out->detail, sizeof(out->detail), "Falling pressure can mean rain later");
+      snprintf(out->headline, sizeof(out->headline), "%s", STORM_TR("Dry for now"));
+      snprintf(out->detail, sizeof(out->detail), "%s", STORM_TR("Falling pressure can mean rain later"));
     } else if (wind_ease_i >= 0) {
       format_hour(times, wind_ease_i, config->time_24h, hour_text, sizeof(hour_text));
-      snprintf(out->headline, sizeof(out->headline), "Winds easing by %s", hour_text);
-      snprintf(out->detail, sizeof(out->detail), "Dry for the next 6 hours");
+      snprintf(out->headline, sizeof(out->headline), STORM_TR("Winds easing by %s"), hour_text);
+      snprintf(out->detail, sizeof(out->detail), "%s", STORM_TR("Dry for the next 6 hours"));
     } else {
-      snprintf(out->headline, sizeof(out->headline), "%s", breezy_now ? "Breezy and dry" : "Calm and dry");
-      snprintf(out->detail, sizeof(out->detail), "for the next %d hours", CONDITIONS_OUTLOOK_HOURS);
+      snprintf(out->headline, sizeof(out->headline), "%s", breezy_now ? STORM_TR("Breezy and dry") : STORM_TR("Calm and dry"));
+      snprintf(out->detail, sizeof(out->detail), STORM_TR("for the next %d hours"), CONDITIONS_OUTLOOK_HOURS);
     }
   }
 #undef WHEN
@@ -699,14 +710,14 @@ bool storm_conditions_build(
    * hints alone (falling pressure, a low chance of rain) only "may change". */
   bool changing = out->alert_count > 0
     || raining_now || precip_likely
-    || strcmp(out->outlook_status, "Steady") != 0
+    || !outlook_steady
     || has_front || has_swing;
   bool may_change = !changing && (pressure_falling || precip_possible);
   out->alert = out->alert_count > 0;
   out->changing = changing;
   out->change_level = changing ? STORM_CHANGE_CHANGING : may_change ? STORM_CHANGE_MAY_CHANGE : STORM_CHANGE_STEADY;
   snprintf(out->change_label, sizeof(out->change_label), "%s",
-    changing ? "Conditions changing" : may_change ? "Conditions may change" : "Conditions steady");
+    changing ? STORM_TR("Conditions changing") : may_change ? STORM_TR("Conditions may change") : STORM_TR("Conditions steady"));
 
   /* Wind */
   out->has_speed = wind_kmh.ok;
@@ -719,8 +730,8 @@ bool storm_conditions_build(
   out->direction = wind_dir.value;
   if (wind_dir.ok) {
     double deg = normalize_degrees(wind_dir.value);
-    snprintf(out->cardinal, sizeof(out->cardinal), "%s", CARDINALS[(int) js_round(deg / 22.5) % 16]);
-    snprintf(out->from, sizeof(out->from), "from the %s", DIRECTION_NAMES[(int) js_round(deg / 45.0) % 8]);
+    snprintf(out->cardinal, sizeof(out->cardinal), "%s", STORM_TR(CARDINALS[(int) js_round(deg / 22.5) % 16]));
+    snprintf(out->from, sizeof(out->from), STORM_TR("from the %s"), STORM_TR(DIRECTION_NAMES[(int) js_round(deg / 45.0) % 8]));
   }
   out->has_peak_gust = gust_peak.ok;
   out->peak_gust = gust_peak.ok ? SPEED(gust_peak.value) : 0;
