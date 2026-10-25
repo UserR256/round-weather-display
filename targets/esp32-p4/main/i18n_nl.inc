@@ -200,6 +200,8 @@
   { "Manual Network", "Handmatig netwerk" },
   { "Cancel", "Annuleren" },
   { "Back", "Terug" },
+  { "Appearance", "Uiterlijk" },
+  { "Changes apply after Save & Restart.", "Wijzigingen gelden na Opslaan & herstarten." },
   { "Save & Restart", "Opslaan & herstarten" },
   { "Wi-Fi network name", "Wifi-netwerknaam" },
   { "Wi-Fi password", "Wifi-wachtwoord" },

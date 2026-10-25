@@ -249,6 +249,7 @@ typedef struct {
   lv_obj_t *setup_scan_panel;
   lv_obj_t *setup_credentials_panel;
   lv_obj_t *setup_location_panel;
+  lv_obj_t *setup_appearance_panel;
   lv_obj_t *setup_scan_status_label;
   lv_obj_t *setup_network_list;
   lv_obj_t *setup_status_label;
@@ -1445,6 +1446,9 @@ static void show_setup_scan_panel(void)
   if (s_ui.setup_location_panel != NULL) {
     lv_obj_add_flag(s_ui.setup_location_panel, LV_OBJ_FLAG_HIDDEN);
   }
+  if (s_ui.setup_appearance_panel != NULL) {
+    lv_obj_add_flag(s_ui.setup_appearance_panel, LV_OBJ_FLAG_HIDDEN);
+  }
 
   if (s_ui.setup_scan_nav_button != NULL) {
     set_setup_button_text(s_ui.setup_scan_nav_button, s_ui.setup_edit_config.wifi_ready ? tr("Back") : tr("Cancel"));
@@ -1477,6 +1481,9 @@ static void show_setup_credentials_panel(
   if (s_ui.setup_location_panel != NULL) {
     lv_obj_add_flag(s_ui.setup_location_panel, LV_OBJ_FLAG_HIDDEN);
   }
+  if (s_ui.setup_appearance_panel != NULL) {
+    lv_obj_add_flag(s_ui.setup_appearance_panel, LV_OBJ_FLAG_HIDDEN);
+  }
   lv_obj_clear_flag(s_ui.setup_credentials_panel, LV_OBJ_FLAG_HIDDEN);
 
   if (show_keyboard) {
@@ -1497,6 +1504,9 @@ static void show_setup_location_panel(bool show_keyboard, const char *status_tex
   }
   if (s_ui.setup_credentials_panel != NULL) {
     lv_obj_add_flag(s_ui.setup_credentials_panel, LV_OBJ_FLAG_HIDDEN);
+  }
+  if (s_ui.setup_appearance_panel != NULL) {
+    lv_obj_add_flag(s_ui.setup_appearance_panel, LV_OBJ_FLAG_HIDDEN);
   }
 
   if (s_ui.setup_edit_config.location_ready) {
@@ -3799,6 +3809,31 @@ static void build_night_overlay(lv_obj_t *parent)
 /* Settings sits above home: swipe up returns, like the Pi. Only presses on
  * the overlay's own background reach this -- its panels, list, keyboard and
  * buttons don't bubble events up -- so scrolling and typing stay theirs. */
+static void setup_appearance_open_event_cb(lv_event_t *event)
+{
+  LV_UNUSED(event);
+  if (s_ui.setup_appearance_panel == NULL || s_ui.setup_location_panel == NULL) {
+    return;
+  }
+
+  hide_setup_keyboard();
+  refresh_setup_settings_buttons();
+  lv_obj_add_flag(s_ui.setup_location_panel, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_clear_flag(s_ui.setup_appearance_panel, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_scroll_to_y(s_ui.setup_appearance_panel, 0, LV_ANIM_OFF);
+}
+
+static void setup_appearance_back_event_cb(lv_event_t *event)
+{
+  LV_UNUSED(event);
+  if (s_ui.setup_appearance_panel == NULL || s_ui.setup_location_panel == NULL) {
+    return;
+  }
+
+  lv_obj_add_flag(s_ui.setup_appearance_panel, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_clear_flag(s_ui.setup_location_panel, LV_OBJ_FLAG_HIDDEN);
+}
+
 static void setup_overlay_gesture_cb(lv_event_t *event)
 {
   lv_event_code_t code = lv_event_get_code(event);
@@ -4073,8 +4108,29 @@ static void build_setup_overlay(lv_obj_t *parent)
   );
   lv_obj_set_width(s_ui.setup_message_sharing_button, LV_PCT(100));
 
+  s_ui.setup_appearance_panel = lv_obj_create(s_ui.setup_overlay);
+  lv_obj_set_size(s_ui.setup_appearance_panel, 620, 500);
+  lv_obj_align(s_ui.setup_appearance_panel, LV_ALIGN_TOP_MID, 0, 150);
+  style_panel(s_ui.setup_appearance_panel, 32, LV_OPA_COVER);
+  lv_obj_set_style_pad_all(s_ui.setup_appearance_panel, 24, 0);
+  lv_obj_set_style_pad_row(s_ui.setup_appearance_panel, 14, 0);
+  lv_obj_set_layout(s_ui.setup_appearance_panel, LV_LAYOUT_FLEX);
+  lv_obj_set_flex_flow(s_ui.setup_appearance_panel, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_scrollbar_mode(s_ui.setup_appearance_panel, LV_SCROLLBAR_MODE_AUTO);
+  lv_obj_set_style_shadow_width(s_ui.setup_appearance_panel, 0, 0);
+  lv_obj_add_flag(s_ui.setup_appearance_panel, LV_OBJ_FLAG_HIDDEN);
+
+  lv_obj_t *appearance_title = create_label(
+    s_ui.setup_appearance_panel,
+    &lv_font_montserrat_18,
+    color_text_primary(),
+    LV_TEXT_ALIGN_CENTER,
+    tr("Appearance")
+  );
+  lv_obj_set_width(appearance_title, LV_PCT(100));
+
   s_ui.setup_face_button = create_setup_button(
-    s_ui.setup_location_panel,
+    s_ui.setup_appearance_panel,
     tr("Home Screen: Digital"),
     lv_color_hex(0x17263b),
     color_panel_border(),
@@ -4083,7 +4139,7 @@ static void build_setup_overlay(lv_obj_t *parent)
   lv_obj_set_width(s_ui.setup_face_button, LV_PCT(100));
 
   s_ui.setup_time_format_button = create_setup_button(
-    s_ui.setup_location_panel,
+    s_ui.setup_appearance_panel,
     tr("Time Format: 12-hour"),
     lv_color_hex(0x17263b),
     color_panel_border(),
@@ -4092,7 +4148,7 @@ static void build_setup_overlay(lv_obj_t *parent)
   lv_obj_set_width(s_ui.setup_time_format_button, LV_PCT(100));
 
   s_ui.setup_leading_zero_button = create_setup_button(
-    s_ui.setup_location_panel,
+    s_ui.setup_appearance_panel,
     tr("Leading Zero: On"),
     lv_color_hex(0x17263b),
     color_panel_border(),
@@ -4101,7 +4157,7 @@ static void build_setup_overlay(lv_obj_t *parent)
   lv_obj_set_width(s_ui.setup_leading_zero_button, LV_PCT(100));
 
   s_ui.setup_units_button = create_setup_button(
-    s_ui.setup_location_panel,
+    s_ui.setup_appearance_panel,
     tr("Units: Imperial"),
     lv_color_hex(0x17263b),
     color_panel_border(),
@@ -4110,13 +4166,41 @@ static void build_setup_overlay(lv_obj_t *parent)
   lv_obj_set_width(s_ui.setup_units_button, LV_PCT(100));
 
   s_ui.setup_night_shift_button = create_setup_button(
-    s_ui.setup_location_panel,
+    s_ui.setup_appearance_panel,
     tr("Night Shift: Off"),
     lv_color_hex(0x17263b),
     color_panel_border(),
     setup_night_shift_toggle_event_cb
   );
   lv_obj_set_width(s_ui.setup_night_shift_button, LV_PCT(100));
+
+  lv_obj_t *appearance_hint = create_label(
+    s_ui.setup_appearance_panel,
+    LV_FONT_DEFAULT,
+    color_text_muted(),
+    LV_TEXT_ALIGN_CENTER,
+    tr("Changes apply after Save & Restart.")
+  );
+  lv_obj_set_width(appearance_hint, LV_PCT(100));
+  lv_label_set_long_mode(appearance_hint, LV_LABEL_LONG_WRAP);
+
+  lv_obj_t *appearance_back_button = create_setup_button(
+    s_ui.setup_appearance_panel,
+    tr("Back"),
+    lv_color_hex(0x245289),
+    color_accent(),
+    setup_appearance_back_event_cb
+  );
+  lv_obj_set_width(appearance_back_button, LV_PCT(100));
+
+  lv_obj_t *appearance_button = create_setup_button(
+    s_ui.setup_location_panel,
+    tr("Appearance"),
+    lv_color_hex(0x17263b),
+    color_panel_border(),
+    setup_appearance_open_event_cb
+  );
+  lv_obj_set_width(appearance_button, LV_PCT(100));
 
   s_ui.setup_language_button = create_setup_button(
     s_ui.setup_location_panel,
