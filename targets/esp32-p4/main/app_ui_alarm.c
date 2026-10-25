@@ -231,7 +231,8 @@ void hide_alarm_ring_popup(void) {
  * LVGL arc angles run clockwise from 3 o'clock, so 150..210 degrees is the
  * left side; value 0 is at the bottom end and 100 at the top end. */
 #define VOL_RING_RADIUS   358
-#define VOL_ARC_WIDTH     14
+#define VOL_ARC_WIDTH     8      /* indicator; the track is thinner, like the ring itself */
+#define VOL_TRACK_WIDTH   4
 #define VOL_STAGE_TRIM_Y  (-18)
 #define VOL_ANGLE_START   150
 #define VOL_ANGLE_END     210
@@ -249,6 +250,17 @@ static void volume_arc_event_cb(lv_event_t *e) {
   }
 }
 
+void volume_arc_set_night(lv_obj_t *arc, bool night) {
+  if (arc == NULL) return;
+  /* Same hues as the digital ring in tools/render_screen_stage_svg.py. */
+  const lv_color_t track = night ? lv_color_hex(0xa55656) : lv_color_hex(0x59beff);
+  const lv_color_t fill  = night ? lv_color_hex(0xc87878) : lv_color_hex(0x8fd4ff);
+  lv_obj_set_style_arc_color(arc, track, LV_PART_MAIN);
+  lv_obj_set_style_arc_opa(arc, night ? LV_OPA_40 : LV_OPA_50, LV_PART_MAIN);
+  lv_obj_set_style_arc_color(arc, fill, LV_PART_INDICATOR);
+  lv_obj_set_style_bg_color(arc, night ? lv_color_hex(0xe0a0a0) : lv_color_hex(0xd8f0ff), LV_PART_KNOB);
+}
+
 lv_obj_t *create_volume_arc(lv_obj_t *parent) {
   lv_obj_t *arc = lv_arc_create(parent);
   const int32_t size = 2 * VOL_RING_RADIUS + VOL_ARC_WIDTH;
@@ -263,30 +275,28 @@ lv_obj_t *create_volume_arc(lv_obj_t *parent) {
   lv_obj_set_style_border_width(arc, 0, 0);
   lv_obj_set_style_pad_all(arc, 0, 0);
 
-  lv_obj_set_style_arc_width(arc, VOL_ARC_WIDTH, LV_PART_MAIN);
-  lv_obj_set_style_arc_color(arc, lv_color_hex(0x31a2e6), LV_PART_MAIN);
-  lv_obj_set_style_arc_opa(arc, LV_OPA_20, LV_PART_MAIN);
+  /* The track lies exactly on the baked ring (digital face: r = 358) and uses
+   * its colour, so the arc reads as a brighter stretch of that ring rather than
+   * a separate widget. On the other tabs the same arc shows as a thin ring
+   * segment on the left edge. Colours are set by volume_arc_set_night(). */
+  lv_obj_set_style_arc_width(arc, VOL_TRACK_WIDTH, LV_PART_MAIN);
   lv_obj_set_style_arc_rounded(arc, true, LV_PART_MAIN);
-
   lv_obj_set_style_arc_width(arc, VOL_ARC_WIDTH, LV_PART_INDICATOR);
-  lv_obj_set_style_arc_color(arc, lv_color_hex(0x59beff), LV_PART_INDICATOR);
   lv_obj_set_style_arc_opa(arc, LV_OPA_COVER, LV_PART_INDICATOR);
   lv_obj_set_style_arc_rounded(arc, true, LV_PART_INDICATOR);
-
-  lv_obj_set_style_bg_color(arc, lv_color_hex(0xbce4ff), LV_PART_KNOB);
   lv_obj_set_style_bg_opa(arc, LV_OPA_COVER, LV_PART_KNOB);
-  lv_obj_set_style_pad_all(arc, 6, LV_PART_KNOB);
+  lv_obj_set_style_pad_all(arc, 4, LV_PART_KNOB);
+  volume_arc_set_night(arc, false);
 
   /* Only the arc itself should take touches, not the whole 730 px square;
    * and a drag on it must not turn into a page swipe. */
   lv_obj_add_flag(arc, LV_OBJ_FLAG_ADV_HITTEST);
   lv_obj_remove_flag(arc, LV_OBJ_FLAG_GESTURE_BUBBLE);
-  lv_obj_set_ext_click_area(arc, 12);
+  lv_obj_set_ext_click_area(arc, 28);   /* thin arc: generous touch margin */
 
   lv_obj_add_event_cb(arc, volume_arc_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
   lv_obj_add_event_cb(arc, volume_arc_event_cb, LV_EVENT_RELEASED, NULL);
   lv_obj_add_event_cb(arc, volume_arc_event_cb, LV_EVENT_PRESS_LOST, NULL);
 
-  lv_obj_add_flag(arc, LV_OBJ_FLAG_HIDDEN);   // shown by set_view_mode() on the digital view
   return arc;
 }
