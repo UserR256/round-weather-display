@@ -4021,7 +4021,7 @@ static void build_setup_overlay(lv_obj_t *parent)
 
   s_ui.setup_location_panel = lv_obj_create(s_ui.setup_overlay);
   lv_obj_set_size(s_ui.setup_location_panel, 620, 500);
-  lv_obj_align(s_ui.setup_location_panel, LV_ALIGN_TOP_MID, 0, 116);
+  lv_obj_align(s_ui.setup_location_panel, LV_ALIGN_TOP_MID, 0, 150);
   style_panel(s_ui.setup_location_panel, 32, LV_OPA_COVER);
   lv_obj_set_style_pad_all(s_ui.setup_location_panel, 24, 0);
   lv_obj_set_style_pad_row(s_ui.setup_location_panel, 14, 0);
