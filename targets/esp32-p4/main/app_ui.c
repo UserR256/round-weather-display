@@ -47,6 +47,8 @@
 #include "lvgl.h"
 #include "message_service.h"
 #include "weather_icon_names.h"
+#include "app_ui_alarm.h"
+#include "audio_alarm.h"
 
 #define ANALOG_CENTER_X (BSP_LCD_H_RES / 2)
 #define ANALOG_CENTER_Y (BSP_LCD_V_RES / 2)
@@ -228,7 +230,8 @@ typedef enum {
   APP_VIEW_DIGITAL,
   APP_VIEW_FORECAST,
   APP_VIEW_CONDITIONS,
-  APP_VIEW_MESSAGE
+  APP_VIEW_MESSAGE,
+  APP_VIEW_RADIO
 } app_view_mode_t;
 
 typedef struct {
@@ -284,6 +287,7 @@ typedef struct {
   lv_obj_t *analog_center_cap;
   lv_obj_t *analog_temp_container;
   lv_obj_t *digital_stage_image;
+  lv_obj_t *volume_arc;
   lv_obj_t *digital_day_label;
   lv_obj_t *digital_date_label;
   lv_obj_t *digital_time_label;
@@ -330,6 +334,16 @@ typedef struct {
   lv_obj_t *analog_weather_indicator;
   lv_obj_t *digital_weather_indicator;
   lv_obj_t *message_stage_image;
+  lv_obj_t *radio_view;
+  lv_obj_t *radio_stage_image;
+  lv_obj_t *radio_title_label;
+  lv_obj_t *radio_status_label;
+  lv_obj_t *radio_button;
+  lv_obj_t *radio_button_label;
+  lv_obj_t *radio_prev_button;
+  lv_obj_t *radio_next_button;
+  lv_obj_t *radio_station_label;
+  lv_obj_t *radio_hint_label;
   lv_obj_t *message_face;
   lv_obj_t *message_title_label;
   lv_obj_t *message_card;
@@ -1153,6 +1167,8 @@ static void request_setup_scan(void);
 static void hide_setup_keyboard(void);
 static void open_setup_overlay(void);
 static void apply_view_night_state(bool active);
+static void apply_radio_night_state(bool active);
+static void refresh_radio_view(void);
 static void apply_conditions_colors(void);
 static void update_weather_indicator_state(void);
 static void update_conditions_view(void);
@@ -2483,10 +2499,12 @@ static void apply_status_night_state(bool active)
 
 static void apply_view_night_state(bool active)
 {
+  volume_arc_set_night(s_ui.volume_arc, active);
   apply_analog_night_state(active);
   apply_digital_night_state(active);
   apply_forecast_night_state(active);
   apply_message_night_state(active);
+  apply_radio_night_state(active);
   apply_status_night_state(active);
   apply_conditions_colors();
   update_message_indicator_state();
@@ -2519,6 +2537,12 @@ static void set_view_mode(app_view_mode_t next_view)
     }
   }
 
+  if (s_ui.volume_arc != NULL) {
+    /* Part of the ring on every page. */
+    lv_arc_set_value(s_ui.volume_arc, audio_alarm_get_volume());   /* stored volume may load after the UI is built */
+    lv_obj_clear_flag(s_ui.volume_arc, LV_OBJ_FLAG_HIDDEN);
+  }
+
   if (s_ui.forecast_view != NULL) {
     if (next_view == APP_VIEW_FORECAST) {
       lv_obj_clear_flag(s_ui.forecast_view, LV_OBJ_FLAG_HIDDEN);
@@ -2540,6 +2564,15 @@ static void set_view_mode(app_view_mode_t next_view)
       lv_obj_clear_flag(s_ui.message_view, LV_OBJ_FLAG_HIDDEN);
     } else {
       lv_obj_add_flag(s_ui.message_view, LV_OBJ_FLAG_HIDDEN);
+    }
+  }
+
+  if (s_ui.radio_view != NULL) {
+    if (next_view == APP_VIEW_RADIO) {
+      refresh_radio_view();
+      lv_obj_clear_flag(s_ui.radio_view, LV_OBJ_FLAG_HIDDEN);
+    } else {
+      lv_obj_add_flag(s_ui.radio_view, LV_OBJ_FLAG_HIDDEN);
     }
   }
 
@@ -2602,11 +2635,17 @@ static void handle_swipe(int delta_x, int delta_y)
 
     int row_index = weather_row_index(s_ui.current_view);
     if (row_index >= 0) {
-      if (delta_x < 0 && row_index == 0) {
-        set_view_mode(s_ui.weather_row[1]);
+      if (delta_x < 0) {
+        /* home -> weather row (2 pages) -> radio: scroll left to reach it */
+        set_view_mode(row_index == 0 ? s_ui.weather_row[1] : APP_VIEW_RADIO);
       } else if (delta_x > 0) {
         set_view_mode(row_index == 0 ? s_ui.last_home_view : s_ui.weather_row[0]);
       }
+      return;
+    }
+
+    if (s_ui.current_view == APP_VIEW_RADIO && delta_x > 0) {
+      set_view_mode(s_ui.weather_row[1]);
       return;
     }
 
@@ -3537,6 +3576,185 @@ static void build_gesture_layer(lv_obj_t *parent)
   lv_obj_add_event_cb(s_ui.gesture_layer, gesture_layer_event_cb, LV_EVENT_PRESS_LOST, NULL);
 }
 
+/* ---- Radio page ----------------------------------------------------------
+ * Right end of the swipe row: home -> forecast/conditions -> radio. It is the
+ * only page that is deliberately reached by scrolling, so the radio never
+ * starts by accident. The page sits above the gesture layer (so its button
+ * gets touches) but is itself not clickable, so swipes on empty areas still
+ * reach the gesture layer and navigate back. */
+static void apply_radio_night_state(bool active)
+{
+  if (s_ui.radio_stage_image != NULL) {
+    lv_image_set_src(s_ui.radio_stage_image, active ? &round_stage_night : &round_stage_day);
+  }
+  if (s_ui.radio_title_label != NULL) {
+    lv_obj_set_style_text_color(s_ui.radio_title_label, active ? color_night_primary() : color_text_primary(), 0);
+  }
+  if (s_ui.radio_status_label != NULL) {
+    lv_obj_set_style_text_color(s_ui.radio_status_label, active ? color_night_primary() : color_digital_accent(), 0);
+  }
+  if (s_ui.radio_station_label != NULL) {
+    lv_obj_set_style_text_color(s_ui.radio_station_label, active ? color_night_primary() : color_text_muted(), 0);
+  }
+}
+
+static void refresh_radio_view(void)
+{
+  if (s_ui.radio_button == NULL) {
+    return;
+  }
+
+  const radio_state_t state = audio_radio_get_state();
+  const bool on = state == RADIO_STATE_CONNECTING || state == RADIO_STATE_PLAYING;
+  const bool alarm_owns_audio = audio_alarm_is_ringing();
+
+  const char *status = "Off";
+  if (alarm_owns_audio) {
+    status = "Alarm is ringing";
+  } else if (state == RADIO_STATE_CONNECTING) {
+    status = "Connecting...";
+  } else if (state == RADIO_STATE_PLAYING) {
+    status = "Playing";
+  } else if (state == RADIO_STATE_FAILED) {
+    status = "Stream unavailable";
+  } else if (state == RADIO_STATE_AUDIO_FAILED) {
+    status = "Audio unavailable";
+  }
+  set_label_text(s_ui.radio_status_label, status);
+  set_label_text(s_ui.radio_button_label, on ? "Stop" : "Start");
+  lv_obj_set_style_bg_color(s_ui.radio_button, on ? lv_color_hex(0xa33a3a) : lv_color_hex(0x1f6fb5), 0);
+
+  const size_t station_index = audio_radio_get_station();
+  const radio_station_t *station = audio_radio_station(station_index);
+  if (station != NULL) {
+    char text[48];
+    snprintf(text, sizeof(text), "%u / %u", (unsigned) (station_index + 1), (unsigned) audio_radio_station_count());
+    set_label_text(s_ui.radio_title_label, station->name);
+    set_label_text(s_ui.radio_station_label, text);
+  }
+
+  lv_obj_t *const controls[] = { s_ui.radio_button, s_ui.radio_prev_button, s_ui.radio_next_button };
+  for (size_t i = 0; i < sizeof(controls) / sizeof(controls[0]); ++i) {
+    if (controls[i] == NULL) {
+      continue;
+    }
+    if (alarm_owns_audio) {
+      lv_obj_add_state(controls[i], LV_STATE_DISABLED);
+    } else {
+      lv_obj_remove_state(controls[i], LV_STATE_DISABLED);
+    }
+  }
+}
+
+static void radio_station_step_event_cb(lv_event_t *event)
+{
+  const intptr_t step = (intptr_t) lv_event_get_user_data(event);   /* -1 or +1 */
+  const size_t count = audio_radio_station_count();
+  if (count == 0) {
+    return;
+  }
+  const size_t next = (audio_radio_get_station() + (step < 0 ? count - 1 : 1)) % count;   /* wraps around */
+  audio_radio_set_station(next);   /* switches the running stream and saves the choice */
+  refresh_radio_view();
+}
+
+static void radio_button_event_cb(lv_event_t *event)
+{
+  (void)event;
+  const radio_state_t state = audio_radio_get_state();
+  if (state == RADIO_STATE_CONNECTING || state == RADIO_STATE_PLAYING) {
+    audio_radio_stop();
+  } else if (audio_radio_start() == ESP_ERR_INVALID_STATE && !audio_alarm_is_ringing()) {
+    /* The previous session is still shutting down; a second tap works. */
+    set_label_text(s_ui.radio_status_label, "One moment...");
+    return;
+  }
+  refresh_radio_view();
+}
+
+static void build_radio_view(lv_obj_t *parent)
+{
+  s_ui.radio_view = lv_obj_create(parent);
+  lv_obj_set_size(s_ui.radio_view, LV_PCT(100), LV_PCT(100));
+  lv_obj_set_style_bg_color(s_ui.radio_view, color_bg(), 0);
+  lv_obj_set_style_bg_opa(s_ui.radio_view, LV_OPA_COVER, 0);
+  lv_obj_set_style_border_width(s_ui.radio_view, 0, 0);
+  lv_obj_set_style_pad_all(s_ui.radio_view, 0, 0);
+  lv_obj_set_scrollbar_mode(s_ui.radio_view, LV_SCROLLBAR_MODE_OFF);
+  lv_obj_remove_flag(s_ui.radio_view, LV_OBJ_FLAG_CLICKABLE);   /* let swipes reach the gesture layer */
+  lv_obj_remove_flag(s_ui.radio_view, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_add_flag(s_ui.radio_view, LV_OBJ_FLAG_HIDDEN);
+
+  s_ui.radio_stage_image = lv_image_create(s_ui.radio_view);
+  lv_image_set_src(s_ui.radio_stage_image, &round_stage_day);
+  lv_obj_align(s_ui.radio_stage_image, LV_ALIGN_CENTER, 0, 0);
+
+  s_ui.radio_title_label = create_label(
+    s_ui.radio_view, &lv_font_montserrat_32, color_text_primary(), LV_TEXT_ALIGN_CENTER, "Radio 538"
+  );
+  lv_obj_set_width(s_ui.radio_title_label, LV_PCT(100));
+  lv_obj_align(s_ui.radio_title_label, LV_ALIGN_TOP_MID, 0, 138);
+
+  s_ui.radio_button = lv_button_create(s_ui.radio_view);
+  lv_obj_set_size(s_ui.radio_button, 200, 200);
+  lv_obj_align(s_ui.radio_button, LV_ALIGN_CENTER, 0, -18);
+  lv_obj_set_style_radius(s_ui.radio_button, LV_RADIUS_CIRCLE, 0);
+  lv_obj_set_style_bg_color(s_ui.radio_button, lv_color_hex(0x1f6fb5), 0);
+  lv_obj_set_style_bg_opa(s_ui.radio_button, LV_OPA_COVER, 0);
+  lv_obj_set_style_bg_opa(s_ui.radio_button, LV_OPA_50, LV_STATE_DISABLED);
+  lv_obj_set_style_shadow_width(s_ui.radio_button, 0, 0);
+  lv_obj_add_event_cb(s_ui.radio_button, radio_button_event_cb, LV_EVENT_CLICKED, NULL);
+
+  s_ui.radio_button_label = create_label(
+    s_ui.radio_button, &lv_font_montserrat_32, lv_color_white(), LV_TEXT_ALIGN_CENTER, "Start"
+  );
+  lv_obj_center(s_ui.radio_button_label);
+
+  s_ui.radio_prev_button = lv_button_create(s_ui.radio_view);
+  lv_obj_set_size(s_ui.radio_prev_button, 90, 90);
+  lv_obj_align(s_ui.radio_prev_button, LV_ALIGN_CENTER, -190, -18);
+  lv_obj_set_style_radius(s_ui.radio_prev_button, LV_RADIUS_CIRCLE, 0);
+  lv_obj_set_style_bg_color(s_ui.radio_prev_button, lv_color_hex(0x17263b), 0);
+  lv_obj_set_style_bg_opa(s_ui.radio_prev_button, LV_OPA_COVER, 0);
+  lv_obj_set_style_bg_opa(s_ui.radio_prev_button, LV_OPA_50, LV_STATE_DISABLED);
+  lv_obj_set_style_shadow_width(s_ui.radio_prev_button, 0, 0);
+  lv_obj_add_event_cb(s_ui.radio_prev_button, radio_station_step_event_cb, LV_EVENT_CLICKED, (void *) (intptr_t) -1);
+  lv_obj_center(create_label(
+    s_ui.radio_prev_button, &lv_font_montserrat_32, lv_color_white(), LV_TEXT_ALIGN_CENTER, "<"
+  ));
+
+  s_ui.radio_next_button = lv_button_create(s_ui.radio_view);
+  lv_obj_set_size(s_ui.radio_next_button, 90, 90);
+  lv_obj_align(s_ui.radio_next_button, LV_ALIGN_CENTER, 190, -18);
+  lv_obj_set_style_radius(s_ui.radio_next_button, LV_RADIUS_CIRCLE, 0);
+  lv_obj_set_style_bg_color(s_ui.radio_next_button, lv_color_hex(0x17263b), 0);
+  lv_obj_set_style_bg_opa(s_ui.radio_next_button, LV_OPA_COVER, 0);
+  lv_obj_set_style_bg_opa(s_ui.radio_next_button, LV_OPA_50, LV_STATE_DISABLED);
+  lv_obj_set_style_shadow_width(s_ui.radio_next_button, 0, 0);
+  lv_obj_add_event_cb(s_ui.radio_next_button, radio_station_step_event_cb, LV_EVENT_CLICKED, (void *) (intptr_t) 1);
+  lv_obj_center(create_label(
+    s_ui.radio_next_button, &lv_font_montserrat_32, lv_color_white(), LV_TEXT_ALIGN_CENTER, ">"
+  ));
+
+  s_ui.radio_station_label = create_label(
+    s_ui.radio_view, &lv_font_montserrat_24, color_text_muted(), LV_TEXT_ALIGN_CENTER, "1 / 1"
+  );
+  lv_obj_set_width(s_ui.radio_station_label, LV_PCT(100));
+  lv_obj_align(s_ui.radio_station_label, LV_ALIGN_TOP_MID, 0, 186);
+
+  s_ui.radio_status_label = create_label(
+    s_ui.radio_view, &lv_font_montserrat_24, color_digital_accent(), LV_TEXT_ALIGN_CENTER, "Off"
+  );
+  lv_obj_set_width(s_ui.radio_status_label, LV_PCT(100));
+  lv_obj_align(s_ui.radio_status_label, LV_ALIGN_CENTER, 0, 130);
+
+  s_ui.radio_hint_label = create_label(
+    s_ui.radio_view, &lv_font_montserrat_24, color_text_muted(), LV_TEXT_ALIGN_CENTER, "Swipe right to go back"
+  );
+  lv_obj_set_width(s_ui.radio_hint_label, LV_PCT(100));
+  lv_obj_align(s_ui.radio_hint_label, LV_ALIGN_CENTER, 0, 200);
+}
+
 static void build_night_overlay(lv_obj_t *parent)
 {
   s_ui.night_overlay = lv_obj_create(parent);
@@ -3868,6 +4086,17 @@ static void build_setup_overlay(lv_obj_t *parent)
     setup_night_shift_toggle_event_cb
   );
   lv_obj_set_width(s_ui.setup_night_shift_button, LV_PCT(100));
+
+  lv_obj_t *alarm_btn = create_setup_button(
+    s_ui.setup_location_panel,
+    "Alarm Settings",
+    lv_color_hex(0x245289),
+    color_accent(),
+    NULL
+  );
+  lv_obj_set_width(alarm_btn, LV_PCT(100));
+  lv_obj_add_event_cb(alarm_btn, (lv_event_cb_t)show_alarm_panel, LV_EVENT_CLICKED, NULL);
+  create_alarm_panel(s_ui.setup_overlay);
 
   lv_obj_t *location_button_row = lv_obj_create(s_ui.setup_location_panel);
   lv_obj_set_width(location_button_row, LV_PCT(100));
@@ -4470,6 +4699,10 @@ static void build_app_shell(const device_config_t *config)
   build_message_view(s_ui.stage);
   yield_ui_bootstrap();
   build_gesture_layer(s_ui.stage);
+  /* After the gesture layer so its button receives touches; see build_radio_view. */
+  build_radio_view(s_ui.stage);
+  /* Above the gesture layer so it receives touches itself. */
+  s_ui.volume_arc = create_volume_arc(s_ui.stage);
   build_status_stack(s_ui.stage);
   build_night_overlay(s_ui.stage);
   build_setup_overlay(s_ui.stage);
@@ -4531,6 +4764,10 @@ esp_err_t app_ui_update_runtime(
 {
   if (config == NULL || runtime == NULL || s_ui.stage == NULL) {
     return ESP_ERR_INVALID_STATE;
+  }
+
+  if (s_ui.current_view == APP_VIEW_RADIO) {
+    refresh_radio_view();   /* connecting -> playing / failed, driven by the audio task */
   }
 
   bool weather_changed = false;

@@ -20,15 +20,18 @@
 #include "app_benchmark.h"
 #include "app_parity_lab.h"
 #include "app_ui.h"
+#include "app_ui_alarm.h"
+#include "audio_alarm.h"
 #include "bsp_shims.h"
 #include "connectivity.h"
 #include "device_config.h"
+#include "heap_diag.h"
 #include "message_service.h"
 #include "weather_client.h"
 
 static const char *TAG = "rwd_esp32_p4";
 
-static const uint32_t UI_HEARTBEAT_LOCK_TIMEOUT_MS = 250;
+static const uint32_t UI_HEARTBEAT_LOCK_TIMEOUT_MS = 1000;
 static const uint32_t INITIAL_UI_LOCK_TIMEOUT_MS = 1000;
 static const uint32_t RUNTIME_LOCK_TIMEOUT_MS = 250;
 static const uint32_t WIFI_CONNECT_TIMEOUT_MS = 30000;
@@ -39,6 +42,7 @@ static const uint32_t WEATHER_RETRY_INTERVAL_MS = 20000;
 static device_config_t s_device_config;
 static app_runtime_state_t s_runtime_state;
 static SemaphoreHandle_t s_runtime_mutex;
+static bool s_popup_visible = false;
 
 static void log_device_clock(const char *context)
 {
@@ -199,16 +203,28 @@ static void ui_heartbeat_task(void *arg)
     vTaskDelay(delay_ticks);
     uptime_seconds += 1;
 
-    /* Static, not on this task's 4 KB stack: the runtime state carries the
-     * full weather snapshot including the conditions summary. Only this
-     * task touches it. */
     static app_runtime_state_t runtime_snapshot;
     runtime_state_snapshot(&runtime_snapshot);
 
-    if (bsp_display_lock(UI_HEARTBEAT_LOCK_TIMEOUT_MS) == ESP_OK) {
+    esp_err_t lock_err = bsp_display_lock(UI_HEARTBEAT_LOCK_TIMEOUT_MS);
+    if (lock_err == ESP_OK) {
       app_ui_update_runtime(&s_device_config, &runtime_snapshot, uptime_seconds);
+
+      bool ringing = audio_alarm_is_ringing();
+      if (ringing && !s_popup_visible) {
+        show_alarm_ring_popup();
+        s_popup_visible = true;
+      } else if (!ringing && s_popup_visible) {
+        hide_alarm_ring_popup();
+        s_popup_visible = false;
+      }
+
       bsp_display_unlock();
+    } else {
+      ESP_LOGW(TAG, "UI heartbeat lock timeout");
     }
+
+    audio_alarm_check();
   }
 }
 
@@ -302,6 +318,7 @@ static void weather_service_task(void *arg)
       }
 
       ESP_LOGI(TAG, "Wi-Fi association completed");
+      heap_diag("after Wi-Fi up");
       time_synced = connectivity_is_time_valid();
     }
 
@@ -382,7 +399,7 @@ static void weather_service_task(void *arg)
     runtime_state_update(true, true, false, &weather_snapshot, false, "");
     ESP_LOGI(
       TAG,
-      "Live weather updated (%d°, H:%d° L:%d°)",
+      "Live weather updated (%d\u00b0, H:%d\u00b0 L:%d\u00b0)",
       weather_snapshot.temp,
       weather_snapshot.high,
       weather_snapshot.low
@@ -393,6 +410,7 @@ static void weather_service_task(void *arg)
 
 void app_main(void)
 {
+  heap_diag("app_main start");
   ESP_ERROR_CHECK(init_nvs());
   ESP_ERROR_CHECK(device_config_load_or_init(&s_device_config));
   connectivity_apply_timezone(s_device_config.timezone);
@@ -406,6 +424,8 @@ void app_main(void)
   runtime_state_seed();
   ESP_ERROR_CHECK(connectivity_prepare_runtime());
   ESP_ERROR_CHECK(message_service_init(&s_device_config));
+  ESP_ERROR_CHECK(audio_alarm_init());
+  heap_diag("after audio_alarm_init");
 
   ESP_LOGI(
     TAG,
@@ -423,6 +443,7 @@ void app_main(void)
     return;
   }
   (void) display;
+  heap_diag("after bsp_display_start");
 
   bool touch_ready = (bsp_display_get_input_dev() != NULL);
 
@@ -487,6 +508,7 @@ void app_main(void)
   }
 
   ESP_LOGI(TAG, "Display ready, touch %s", touch_ready ? "detected" : "not detected");
+  heap_diag("after boot screen");
 
   BaseType_t ui_task_ok = xTaskCreate(
     ui_heartbeat_task,
