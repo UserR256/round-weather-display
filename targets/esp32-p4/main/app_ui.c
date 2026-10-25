@@ -287,6 +287,7 @@ typedef struct {
   lv_obj_t *analog_center_cap;
   lv_obj_t *analog_temp_container;
   lv_obj_t *digital_stage_image;
+  lv_obj_t *volume_arc;
   lv_obj_t *digital_day_label;
   lv_obj_t *digital_date_label;
   lv_obj_t *digital_time_label;
@@ -2535,6 +2536,15 @@ static void set_view_mode(app_view_mode_t next_view)
     }
   }
 
+  if (s_ui.volume_arc != NULL) {
+    if (next_view == APP_VIEW_DIGITAL) {
+      lv_arc_set_value(s_ui.volume_arc, audio_alarm_get_volume());   /* stored volume may load after the UI is built */
+      lv_obj_clear_flag(s_ui.volume_arc, LV_OBJ_FLAG_HIDDEN);
+    } else {
+      lv_obj_add_flag(s_ui.volume_arc, LV_OBJ_FLAG_HIDDEN);
+    }
+  }
+
   if (s_ui.forecast_view != NULL) {
     if (next_view == APP_VIEW_FORECAST) {
       lv_obj_clear_flag(s_ui.forecast_view, LV_OBJ_FLAG_HIDDEN);
@@ -4693,6 +4703,8 @@ static void build_app_shell(const device_config_t *config)
   build_gesture_layer(s_ui.stage);
   /* After the gesture layer so its button receives touches; see build_radio_view. */
   build_radio_view(s_ui.stage);
+  /* Above the gesture layer so it receives touches itself. */
+  s_ui.volume_arc = create_volume_arc(s_ui.stage);
   build_status_stack(s_ui.stage);
   build_night_overlay(s_ui.stage);
   build_setup_overlay(s_ui.stage);

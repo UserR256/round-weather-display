@@ -49,3 +49,9 @@ esp_err_t audio_radio_set_station(size_t index);
 esp_err_t audio_radio_start(void);   // ESP_ERR_INVALID_STATE if still shutting down: try again
 void audio_radio_stop(void);
 radio_state_t audio_radio_get_state(void);
+
+// Volume 0-100 for alarm sounds. Applies immediately; persist=true also writes
+// it to NVS (do that on slider release, not while dragging).
+void audio_alarm_set_volume(uint8_t volume, bool persist);
+uint8_t audio_alarm_get_volume(void);
+void audio_alarm_preview_volume(void);   // short confirmation beep, only when idle

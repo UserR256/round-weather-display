@@ -56,6 +56,8 @@ static time_t s_snooze_until = 0;
 static TaskHandle_t s_radio_task = NULL;
 static TaskHandle_t s_beep_task = NULL;
 static int s_last_triggered_minute = -1;
+static uint8_t s_volume = 70;
+static TaskHandle_t s_preview_task = NULL;
 
 // Radio started from the UI (not by the alarm).
 static volatile bool s_radio_manual = false;
@@ -81,8 +83,11 @@ static esp_err_t load_from_nvs(void) {
   nvs_get_u8(nvs, "type", &type);
   uint8_t station = 0;
   nvs_get_u8(nvs, "station", &station);
+  uint8_t volume = s_volume;
+  nvs_get_u8(nvs, "volume", &volume);
   nvs_close(nvs);
   s_station = station < STATION_COUNT ? station : 0;
+  s_volume = volume > 100 ? 100 : volume;
 
   s_alarm.enabled = enabled;
   s_alarm.hour = hour;
@@ -103,11 +108,42 @@ static esp_err_t save_to_nvs(void) {
   return ESP_OK;
 }
 
+void audio_alarm_set_volume(uint8_t volume, bool persist) {
+  s_volume = volume > 100 ? 100 : volume;
+  audio_beep_set_volume(s_volume);
+  if (!persist) return;
+  nvs_handle_t nvs;
+  if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs) == ESP_OK) {   // not fatal if it fails
+    if (nvs_set_u8(nvs, "volume", s_volume) == ESP_OK) nvs_commit(nvs);
+    nvs_close(nvs);
+  }
+}
+
+uint8_t audio_alarm_get_volume(void) {
+  return s_volume;
+}
+
+static void preview_task(void *arg) {
+  (void)arg;
+  if (audio_beep_init() == ESP_OK) {
+    audio_beep_play(880, 200);
+    if (!s_ringing) audio_beep_deinit();   // the alarm may have started meanwhile
+  }
+  s_preview_task = NULL;
+  vTaskDelete(NULL);
+}
+
+void audio_alarm_preview_volume(void) {
+  if (s_ringing || s_beep_task || s_radio_task || s_preview_task) return;
+  xTaskCreate(preview_task, "vol_preview", 4096, NULL, 4, &s_preview_task);
+}
+
 static void beep_task(void *arg) {
   (void)arg;
   // A manual radio session must release the codec first (it exits on its own).
   for (int i = 0; i < 100 && s_radio_task; i++) vTaskDelay(pdMS_TO_TICKS(20));
   audio_beep_init();
+  audio_beep_set_volume(s_volume);
   while (s_ringing) {
     audio_beep_play(1000, 250);
     vTaskDelay(pdMS_TO_TICKS(150));
@@ -209,6 +245,7 @@ static void radio_task(void *arg) {
       vTaskDelay(pdMS_TO_TICKS(RADIO_RETRY_DELAY_MS));
       continue;
     }
+    audio_beep_set_volume(s_volume);
     mp3dec_init(dec);
     int mp3_buf_len = 0;
     bool got_audio = false;
@@ -270,6 +307,7 @@ static void radio_task(void *arg) {
   if (gave_up && s_ringing && s_alarm.type == ALARM_TYPE_RADIO) {
     ESP_LOGE(TAG, "Falling back to beep");
     if (audio_beep_init() == ESP_OK) {
+      audio_beep_set_volume(s_volume);
       if (cur_rate != STREAM_RATE && audio_beep_set_format(STREAM_RATE, 2) == ESP_OK) {
         cur_rate = STREAM_RATE;
       }
@@ -391,6 +429,7 @@ static void stop_alarm_sound(void) {
 
 esp_err_t audio_alarm_init(void) {
   load_from_nvs();
+  audio_beep_set_volume(s_volume);
   ESP_LOGI(TAG, "Alarm loaded: %02d:%02d %s %s",
            s_alarm.hour, s_alarm.minute,
            s_alarm.enabled ? "ON" : "OFF",

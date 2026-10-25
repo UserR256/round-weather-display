@@ -223,3 +223,70 @@ void hide_alarm_ring_popup(void) {
     lv_obj_add_flag(s_ring_popup, LV_OBJ_FLAG_HIDDEN);
   }
 }
+
+/* ---- Volume arc on the left side of the digital face's blue ring ----------
+ * Geometry comes from tools/render_screen_stage_svg.py: the ring is a circle
+ * of radius FACE_RADIUS - 32 = 358 around (400, 382) on the 800x800 stage
+ * (the stage is shifted up by 18 px, see STAGE_Y_TRIM).
+ * LVGL arc angles run clockwise from 3 o'clock, so 150..210 degrees is the
+ * left side; value 0 is at the bottom end and 100 at the top end. */
+#define VOL_RING_RADIUS   358
+#define VOL_ARC_WIDTH     14
+#define VOL_STAGE_TRIM_Y  (-18)
+#define VOL_ANGLE_START   150
+#define VOL_ANGLE_END     210
+
+static void volume_arc_event_cb(lv_event_t *e) {
+  lv_obj_t *arc = lv_event_get_target_obj(e);
+  lv_event_code_t code = lv_event_get_code(e);
+  uint8_t vol = (uint8_t)lv_arc_get_value(arc);
+
+  if (code == LV_EVENT_VALUE_CHANGED) {
+    audio_alarm_set_volume(vol, false);          // live, no flash writes while dragging
+  } else if (code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) {
+    audio_alarm_set_volume(vol, true);           // save once, on release
+    audio_alarm_preview_volume();
+  }
+}
+
+lv_obj_t *create_volume_arc(lv_obj_t *parent) {
+  lv_obj_t *arc = lv_arc_create(parent);
+  const int32_t size = 2 * VOL_RING_RADIUS + VOL_ARC_WIDTH;
+  lv_obj_set_size(arc, size, size);
+  lv_obj_align(arc, LV_ALIGN_CENTER, 0, VOL_STAGE_TRIM_Y);
+
+  lv_arc_set_bg_angles(arc, VOL_ANGLE_START, VOL_ANGLE_END);
+  lv_arc_set_range(arc, 0, 100);
+  lv_arc_set_value(arc, audio_alarm_get_volume());
+
+  lv_obj_set_style_bg_opa(arc, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_border_width(arc, 0, 0);
+  lv_obj_set_style_pad_all(arc, 0, 0);
+
+  lv_obj_set_style_arc_width(arc, VOL_ARC_WIDTH, LV_PART_MAIN);
+  lv_obj_set_style_arc_color(arc, lv_color_hex(0x31a2e6), LV_PART_MAIN);
+  lv_obj_set_style_arc_opa(arc, LV_OPA_20, LV_PART_MAIN);
+  lv_obj_set_style_arc_rounded(arc, true, LV_PART_MAIN);
+
+  lv_obj_set_style_arc_width(arc, VOL_ARC_WIDTH, LV_PART_INDICATOR);
+  lv_obj_set_style_arc_color(arc, lv_color_hex(0x59beff), LV_PART_INDICATOR);
+  lv_obj_set_style_arc_opa(arc, LV_OPA_COVER, LV_PART_INDICATOR);
+  lv_obj_set_style_arc_rounded(arc, true, LV_PART_INDICATOR);
+
+  lv_obj_set_style_bg_color(arc, lv_color_hex(0xbce4ff), LV_PART_KNOB);
+  lv_obj_set_style_bg_opa(arc, LV_OPA_COVER, LV_PART_KNOB);
+  lv_obj_set_style_pad_all(arc, 6, LV_PART_KNOB);
+
+  /* Only the arc itself should take touches, not the whole 730 px square;
+   * and a drag on it must not turn into a page swipe. */
+  lv_obj_add_flag(arc, LV_OBJ_FLAG_ADV_HITTEST);
+  lv_obj_remove_flag(arc, LV_OBJ_FLAG_GESTURE_BUBBLE);
+  lv_obj_set_ext_click_area(arc, 12);
+
+  lv_obj_add_event_cb(arc, volume_arc_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
+  lv_obj_add_event_cb(arc, volume_arc_event_cb, LV_EVENT_RELEASED, NULL);
+  lv_obj_add_event_cb(arc, volume_arc_event_cb, LV_EVENT_PRESS_LOST, NULL);
+
+  lv_obj_add_flag(arc, LV_OBJ_FLAG_HIDDEN);   // shown by set_view_mode() on the digital view
+  return arc;
+}
