@@ -225,15 +225,19 @@ void hide_alarm_ring_popup(void) {
 }
 
 /* ---- Volume arc on the left side of the digital face's blue ring ----------
- * Geometry comes from tools/render_screen_stage_svg.py: the ring is a circle
- * of radius FACE_RADIUS - 32 = 358 around (400, 382) on the 800x800 stage
- * (the stage is shifted up by 18 px, see STAGE_Y_TRIM).
+ * Geometry measured from the pixels of assets/digital_stage_day.c (circle fit
+ * over the ring): centre (399.5, 401.5) on the 800x800 stage image, radius 358.
+ * The stage image is centred on the screen, so the arc is centred too, with a
+ * 1 px nudge down. (The -18 "trim" in tools/render_screen_stage_svg.py is not
+ * what the baked image shows; using it put the arc 18 px too high.)
+ * LVGL draws an arc stroke inward from size/2, so for a stroke of width W
+ * the centre line is at size/2 - W/2. Track and indicator use the same W so
+ * both lie on the ring.
  * LVGL arc angles run clockwise from 3 o'clock, so 150..210 degrees is the
  * left side; value 0 is at the bottom end and 100 at the top end. */
 #define VOL_RING_RADIUS   358
-#define VOL_ARC_WIDTH     8      /* indicator; the track is thinner, like the ring itself */
-#define VOL_TRACK_WIDTH   4
-#define VOL_STAGE_TRIM_Y  (-18)
+#define VOL_ARC_WIDTH     6
+#define VOL_STAGE_TRIM_Y  1
 #define VOL_ANGLE_START   150
 #define VOL_ANGLE_END     210
 
@@ -263,7 +267,7 @@ void volume_arc_set_night(lv_obj_t *arc, bool night) {
 
 lv_obj_t *create_volume_arc(lv_obj_t *parent) {
   lv_obj_t *arc = lv_arc_create(parent);
-  const int32_t size = 2 * VOL_RING_RADIUS + VOL_ARC_WIDTH;
+  const int32_t size = 2 * (VOL_RING_RADIUS + VOL_ARC_WIDTH / 2);
   lv_obj_set_size(arc, size, size);
   lv_obj_align(arc, LV_ALIGN_CENTER, 0, VOL_STAGE_TRIM_Y);
 
@@ -279,7 +283,7 @@ lv_obj_t *create_volume_arc(lv_obj_t *parent) {
    * its colour, so the arc reads as a brighter stretch of that ring rather than
    * a separate widget. On the other tabs the same arc shows as a thin ring
    * segment on the left edge. Colours are set by volume_arc_set_night(). */
-  lv_obj_set_style_arc_width(arc, VOL_TRACK_WIDTH, LV_PART_MAIN);
+  lv_obj_set_style_arc_width(arc, VOL_ARC_WIDTH, LV_PART_MAIN);
   lv_obj_set_style_arc_rounded(arc, true, LV_PART_MAIN);
   lv_obj_set_style_arc_width(arc, VOL_ARC_WIDTH, LV_PART_INDICATOR);
   lv_obj_set_style_arc_opa(arc, LV_OPA_COVER, LV_PART_INDICATOR);
