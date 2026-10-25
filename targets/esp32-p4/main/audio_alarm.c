@@ -27,13 +27,17 @@ static StackType_t *s_radio_stack = NULL;
 static const char *TAG = "audio_alarm";
 static const char *NVS_NAMESPACE = "alarm";
 
-// MP3 streams only. Radio 2, Qmusic and Slam are not here because the URLs on
-// hand are AAC, which minimp3 cannot decode. Index 0 is the default.
+// MP3 streams only (the decoder is minimp3; AAC streams will not play).
+// Index 0 is the default. The chosen index is saved in NVS, so add new stations
+// at the end to keep an already saved choice pointing at the same station.
 static const radio_station_t s_stations[] = {
   { "Radio 538", "http://25483.live.streamtheworld.com/RADIO538.mp3" },
   { "3FM",       "http://icecast.omroep.nl/3fm-sb-mp3" },
   { "Radio 10",  "https://www.mp3streams.nl/zender/radio-10/stream/9-mp3-128" },
   { "Skyradio",  "https://www.mp3streams.nl/zender/skyradio/stream/8-mp3-128" },
+  { "Radio 2",   "https://icecast.omroep.nl/radio2-sb-mp3" },
+  { "Qmusic",    "https://stream.qmusic.nl/qmusic/mp3" },
+  { "Slam",      "https://stream.slam.nl/slam_mp3" },
 };
 #define STATION_COUNT (sizeof(s_stations) / sizeof(s_stations[0]))
 
