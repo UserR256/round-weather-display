@@ -69,3 +69,4 @@ __pycache__/
 ui_bugs/
 .vscode/settings.json
 /targets/esp32-p4/.vscode
+targets/esp32-p4/.clangd
