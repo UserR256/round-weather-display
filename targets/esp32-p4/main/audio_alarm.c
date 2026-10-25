@@ -26,7 +26,19 @@ static StackType_t *s_radio_stack = NULL;
 
 static const char *TAG = "audio_alarm";
 static const char *NVS_NAMESPACE = "alarm";
-static const char *RADIO_URL = "http://25483.live.streamtheworld.com/RADIO538.mp3";
+
+// MP3 streams only. Radio 2, Qmusic and Slam are not here because the URLs on
+// hand are AAC, which minimp3 cannot decode. Index 0 is the default.
+static const radio_station_t s_stations[] = {
+  { "Radio 538", "http://25483.live.streamtheworld.com/RADIO538.mp3" },
+  { "3FM",       "http://icecast.omroep.nl/3fm-sb-mp3" },
+  { "Radio 10",  "https://www.mp3streams.nl/zender/radio-10/stream/9-mp3-128" },
+  { "Skyradio",  "https://www.mp3streams.nl/zender/skyradio/stream/8-mp3-128" },
+};
+#define STATION_COUNT (sizeof(s_stations) / sizeof(s_stations[0]))
+
+static volatile uint8_t s_station = 0;
+static volatile uint32_t s_station_gen = 0;   // bumped on every change; the radio task reconnects
 
 static alarm_config_t s_alarm = {
   .enabled = false,
@@ -63,7 +75,10 @@ static esp_err_t load_from_nvs(void) {
   nvs_get_u8(nvs, "hour", &hour);
   nvs_get_u8(nvs, "minute", &minute);
   nvs_get_u8(nvs, "type", &type);
+  uint8_t station = 0;
+  nvs_get_u8(nvs, "station", &station);
   nvs_close(nvs);
+  s_station = station < STATION_COUNT ? station : 0;
 
   s_alarm.enabled = enabled;
   s_alarm.hour = hour;
@@ -101,8 +116,19 @@ static void beep_task(void *arg) {
   vTaskDelete(NULL);
 }
 
-static bool radio_open(esp_http_client_handle_t client) {
-  esp_http_client_set_url(client, RADIO_URL);
+// A fresh HTTP client per connection: a station can switch between http and
+// https, and a new handle avoids any stale transport state.
+static esp_http_client_handle_t radio_connect(const char *url) {
+  esp_http_client_config_t config = {
+    .url = url,
+    .timeout_ms = 5000,
+    .crt_bundle_attach = esp_crt_bundle_attach,
+  };
+  esp_http_client_handle_t client = esp_http_client_init(&config);
+  if (!client) {
+    ESP_LOGE(TAG, "HTTP client init failed");
+    return NULL;
+  }
   for (int attempt = 0; attempt < 5; attempt++) {
     if (esp_http_client_open(client, 0) != ESP_OK) {
       ESP_LOGE(TAG, "Failed to open radio stream");
@@ -110,7 +136,7 @@ static bool radio_open(esp_http_client_handle_t client) {
     }
     esp_http_client_fetch_headers(client);
     int status = esp_http_client_get_status_code(client);
-    if (status == 200) return true;
+    if (status == 200) return client;
     if (status == 301 || status == 302 || status == 303 || status == 307 || status == 308) {
       esp_http_client_set_redirection(client);
       esp_http_client_close(client);
@@ -120,7 +146,8 @@ static bool radio_open(esp_http_client_handle_t client) {
     break;
   }
   esp_http_client_close(client);
-  return false;
+  esp_http_client_cleanup(client);
+  return NULL;
 }
 
 static void *psram_alloc(size_t size) {
@@ -131,27 +158,19 @@ static void *psram_alloc(size_t size) {
 static void radio_task(void *arg) {
   (void)arg;
 
-  esp_http_client_config_t config = {
-    .url = RADIO_URL,
-    .timeout_ms = 5000,
-    .crt_bundle_attach = esp_crt_bundle_attach,
-  };
-  esp_http_client_handle_t client = esp_http_client_init(&config);
-
   // Decoder state and buffers go to PSRAM: ~19 KB that would otherwise come out
   // of the internal RAM the I2S DMA buffers and TLS need (the task stack is
   // already in PSRAM). Falls back to the normal heap if PSRAM is unavailable.
   mp3dec_t *dec = psram_alloc(sizeof(mp3dec_t));
   uint8_t *mp3_buf = psram_alloc(MP3_BUF_SIZE);
   int16_t *pcm = psram_alloc(MINIMP3_MAX_SAMPLES_PER_FRAME * sizeof(int16_t));
-  if (!client || !dec || !mp3_buf || !pcm) {
+  if (!dec || !mp3_buf || !pcm) {
     ESP_LOGE(TAG, "Failed to allocate radio resources");
     s_radio_manual = false;
     s_radio_state = RADIO_STATE_FAILED;
     s_radio_exit_tick = xTaskGetTickCount();
     s_radio_exited_once = true;
     free(dec); free(mp3_buf); free(pcm);
-    if (client) esp_http_client_cleanup(client);
     s_radio_task = NULL;
     vTaskDelete(NULL);
     return;
@@ -164,7 +183,11 @@ static void radio_task(void *arg) {
 
   while (radio_active()) {
     s_radio_state = RADIO_STATE_CONNECTING;
-    if (!radio_open(client)) {
+    const uint32_t gen = s_station_gen;                       // read before the index (see audio_radio_set_station)
+    const radio_station_t *station = &s_stations[s_station];
+    ESP_LOGI(TAG, "Station: %s", station->name);
+    esp_http_client_handle_t client = radio_connect(station->url);
+    if (!client) {
       if (++failures >= RADIO_MAX_RETRIES) { gave_up = true; break; }
       ESP_LOGW(TAG, "Retry %d/%d", failures, RADIO_MAX_RETRIES);
       vTaskDelay(pdMS_TO_TICKS(RADIO_RETRY_DELAY_MS));
@@ -176,6 +199,7 @@ static void radio_task(void *arg) {
       // reported as playing.
       ESP_LOGE(TAG, "Audio output unavailable");
       esp_http_client_close(client);
+      esp_http_client_cleanup(client);
       audio_failed = true;
       if (++failures >= RADIO_MAX_RETRIES) { gave_up = true; break; }
       vTaskDelay(pdMS_TO_TICKS(RADIO_RETRY_DELAY_MS));
@@ -185,7 +209,7 @@ static void radio_task(void *arg) {
     int mp3_buf_len = 0;
     bool got_audio = false;
 
-    while (radio_active()) {
+    while (radio_active() && gen == s_station_gen) {
       if (mp3_buf_len < MP3_REFILL_AT) {
         int n = esp_http_client_read(client, (char *)(mp3_buf + mp3_buf_len),
                                      MP3_BUF_SIZE - mp3_buf_len);
@@ -225,7 +249,12 @@ static void radio_task(void *arg) {
     }
 
     esp_http_client_close(client);
+    esp_http_client_cleanup(client);
     if (!radio_active()) break;
+    if (gen != s_station_gen) {   // user picked another station: reconnect, no failure counted
+      failures = 0;
+      continue;
+    }
 
     failures = got_audio ? 1 : failures + 1;
     if (failures >= RADIO_MAX_RETRIES) { gave_up = true; break; }
@@ -253,7 +282,6 @@ static void radio_task(void *arg) {
   free(dec);
   free(mp3_buf);
   free(pcm);
-  esp_http_client_cleanup(client);
   audio_beep_deinit();
   if (gave_up) s_radio_manual = false;   // the UI shows "failed", not "playing"
   s_radio_state = !gave_up ? RADIO_STATE_OFF
@@ -287,6 +315,32 @@ static bool launch_radio_task(bool may_wait) {
   s_radio_task = xTaskCreateStatic(radio_task, "radio", RADIO_STACK_SIZE,
                                    NULL, 5, s_radio_stack, &s_radio_tcb);
   return s_radio_task != NULL;
+}
+
+size_t audio_radio_station_count(void) {
+  return STATION_COUNT;
+}
+
+const radio_station_t *audio_radio_station(size_t index) {
+  return index < STATION_COUNT ? &s_stations[index] : NULL;
+}
+
+size_t audio_radio_get_station(void) {
+  return s_station;
+}
+
+esp_err_t audio_radio_set_station(size_t index) {
+  if (index >= STATION_COUNT) return ESP_ERR_INVALID_ARG;
+  if (index == s_station) return ESP_OK;
+  s_station = (uint8_t) index;   // index first, then the generation: the task reads them in the other order
+  s_station_gen++;
+
+  nvs_handle_t nvs;   // best effort; a failed save must not break playback
+  if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs) == ESP_OK) {
+    if (nvs_set_u8(nvs, "station", (uint8_t) index) == ESP_OK) nvs_commit(nvs);
+    nvs_close(nvs);
+  }
+  return ESP_OK;
 }
 
 esp_err_t audio_radio_start(void) {

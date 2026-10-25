@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include "esp_err.h"
 
@@ -32,6 +33,18 @@ typedef enum {
   RADIO_STATE_FAILED,   // gave up after the retries; stays until the next start
   RADIO_STATE_AUDIO_FAILED,   // stream is fine but the audio output could not be set up (memory)
 } radio_state_t;
+
+typedef struct {
+  const char *name;
+  const char *url;   // must be an MP3 stream (the decoder is MP3 only)
+} radio_station_t;
+
+size_t audio_radio_station_count(void);
+const radio_station_t *audio_radio_station(size_t index);
+size_t audio_radio_get_station(void);
+// Selects the station (also used by the radio alarm), saves it, and switches
+// the running stream if the radio is playing.
+esp_err_t audio_radio_set_station(size_t index);
 
 esp_err_t audio_radio_start(void);   // ESP_ERR_INVALID_STATE if still shutting down: try again
 void audio_radio_stop(void);

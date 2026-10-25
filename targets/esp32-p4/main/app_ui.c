@@ -339,6 +339,9 @@ typedef struct {
   lv_obj_t *radio_status_label;
   lv_obj_t *radio_button;
   lv_obj_t *radio_button_label;
+  lv_obj_t *radio_prev_button;
+  lv_obj_t *radio_next_button;
+  lv_obj_t *radio_station_label;
   lv_obj_t *radio_hint_label;
   lv_obj_t *message_face;
   lv_obj_t *message_title_label;
@@ -3582,6 +3585,9 @@ static void apply_radio_night_state(bool active)
   if (s_ui.radio_status_label != NULL) {
     lv_obj_set_style_text_color(s_ui.radio_status_label, active ? color_night_primary() : color_digital_accent(), 0);
   }
+  if (s_ui.radio_station_label != NULL) {
+    lv_obj_set_style_text_color(s_ui.radio_station_label, active ? color_night_primary() : color_text_muted(), 0);
+  }
 }
 
 static void refresh_radio_view(void)
@@ -3610,11 +3616,38 @@ static void refresh_radio_view(void)
   set_label_text(s_ui.radio_button_label, on ? "Stop" : "Start");
   lv_obj_set_style_bg_color(s_ui.radio_button, on ? lv_color_hex(0xa33a3a) : lv_color_hex(0x1f6fb5), 0);
 
-  if (alarm_owns_audio) {
-    lv_obj_add_state(s_ui.radio_button, LV_STATE_DISABLED);
-  } else {
-    lv_obj_remove_state(s_ui.radio_button, LV_STATE_DISABLED);
+  const size_t station_index = audio_radio_get_station();
+  const radio_station_t *station = audio_radio_station(station_index);
+  if (station != NULL) {
+    char text[48];
+    snprintf(text, sizeof(text), "%u / %u", (unsigned) (station_index + 1), (unsigned) audio_radio_station_count());
+    set_label_text(s_ui.radio_title_label, station->name);
+    set_label_text(s_ui.radio_station_label, text);
   }
+
+  lv_obj_t *const controls[] = { s_ui.radio_button, s_ui.radio_prev_button, s_ui.radio_next_button };
+  for (size_t i = 0; i < sizeof(controls) / sizeof(controls[0]); ++i) {
+    if (controls[i] == NULL) {
+      continue;
+    }
+    if (alarm_owns_audio) {
+      lv_obj_add_state(controls[i], LV_STATE_DISABLED);
+    } else {
+      lv_obj_remove_state(controls[i], LV_STATE_DISABLED);
+    }
+  }
+}
+
+static void radio_station_step_event_cb(lv_event_t *event)
+{
+  const intptr_t step = (intptr_t) lv_event_get_user_data(event);   /* -1 or +1 */
+  const size_t count = audio_radio_station_count();
+  if (count == 0) {
+    return;
+  }
+  const size_t next = (audio_radio_get_station() + (step < 0 ? count - 1 : 1)) % count;   /* wraps around */
+  audio_radio_set_station(next);   /* switches the running stream and saves the choice */
+  refresh_radio_view();
 }
 
 static void radio_button_event_cb(lv_event_t *event)
@@ -3668,6 +3701,38 @@ static void build_radio_view(lv_obj_t *parent)
     s_ui.radio_button, &lv_font_montserrat_32, lv_color_white(), LV_TEXT_ALIGN_CENTER, "Start"
   );
   lv_obj_center(s_ui.radio_button_label);
+
+  s_ui.radio_prev_button = lv_button_create(s_ui.radio_view);
+  lv_obj_set_size(s_ui.radio_prev_button, 90, 90);
+  lv_obj_align(s_ui.radio_prev_button, LV_ALIGN_CENTER, -190, -18);
+  lv_obj_set_style_radius(s_ui.radio_prev_button, LV_RADIUS_CIRCLE, 0);
+  lv_obj_set_style_bg_color(s_ui.radio_prev_button, lv_color_hex(0x17263b), 0);
+  lv_obj_set_style_bg_opa(s_ui.radio_prev_button, LV_OPA_COVER, 0);
+  lv_obj_set_style_bg_opa(s_ui.radio_prev_button, LV_OPA_50, LV_STATE_DISABLED);
+  lv_obj_set_style_shadow_width(s_ui.radio_prev_button, 0, 0);
+  lv_obj_add_event_cb(s_ui.radio_prev_button, radio_station_step_event_cb, LV_EVENT_CLICKED, (void *) (intptr_t) -1);
+  lv_obj_center(create_label(
+    s_ui.radio_prev_button, &lv_font_montserrat_32, lv_color_white(), LV_TEXT_ALIGN_CENTER, "<"
+  ));
+
+  s_ui.radio_next_button = lv_button_create(s_ui.radio_view);
+  lv_obj_set_size(s_ui.radio_next_button, 90, 90);
+  lv_obj_align(s_ui.radio_next_button, LV_ALIGN_CENTER, 190, -18);
+  lv_obj_set_style_radius(s_ui.radio_next_button, LV_RADIUS_CIRCLE, 0);
+  lv_obj_set_style_bg_color(s_ui.radio_next_button, lv_color_hex(0x17263b), 0);
+  lv_obj_set_style_bg_opa(s_ui.radio_next_button, LV_OPA_COVER, 0);
+  lv_obj_set_style_bg_opa(s_ui.radio_next_button, LV_OPA_50, LV_STATE_DISABLED);
+  lv_obj_set_style_shadow_width(s_ui.radio_next_button, 0, 0);
+  lv_obj_add_event_cb(s_ui.radio_next_button, radio_station_step_event_cb, LV_EVENT_CLICKED, (void *) (intptr_t) 1);
+  lv_obj_center(create_label(
+    s_ui.radio_next_button, &lv_font_montserrat_32, lv_color_white(), LV_TEXT_ALIGN_CENTER, ">"
+  ));
+
+  s_ui.radio_station_label = create_label(
+    s_ui.radio_view, &lv_font_montserrat_24, color_text_muted(), LV_TEXT_ALIGN_CENTER, "1 / 1"
+  );
+  lv_obj_set_width(s_ui.radio_station_label, LV_PCT(100));
+  lv_obj_align(s_ui.radio_station_label, LV_ALIGN_TOP_MID, 0, 186);
 
   s_ui.radio_status_label = create_label(
     s_ui.radio_view, &lv_font_montserrat_24, color_digital_accent(), LV_TEXT_ALIGN_CENTER, "Off"
