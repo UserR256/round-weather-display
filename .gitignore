@@ -68,3 +68,4 @@ __pycache__/
 # UI debugging photo archive -- local reference only, not a product asset.
 ui_bugs/
 .vscode/settings.json
+/targets/esp32-p4/.vscode
