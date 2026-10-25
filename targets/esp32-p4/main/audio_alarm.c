@@ -33,11 +33,11 @@ static const char *NVS_NAMESPACE = "alarm";
 static const radio_station_t s_stations[] = {
   { "Radio 538", "http://25483.live.streamtheworld.com/RADIO538.mp3" },
   { "3FM",       "http://icecast.omroep.nl/3fm-sb-mp3" },
-  { "Radio 10",  "https://www.mp3streams.nl/zender/radio-10/stream/9-mp3-128" },
-  { "Skyradio",  "https://www.mp3streams.nl/zender/skyradio/stream/8-mp3-128" },
-  { "Radio 2",   "https://icecast.omroep.nl/radio2-sb-mp3" },
-  { "Qmusic",    "https://stream.qmusic.nl/qmusic/mp3" },
-  { "Slam",      "https://stream.slam.nl/slam_mp3" },
+  { "Radio 10",  "http://playerservices.streamtheworld.com/api/livestream-redirect/RADIO10.mp3" },
+  { "Skyradio",  "http://playerservices.streamtheworld.com/api/livestream-redirect/SKYRADIO.mp3" },
+  { "Radio 2",   "http://icecast.omroep.nl/radio2-sb-mp3" },
+  { "Qmusic",    "http://stream.qmusic.nl/qmusic/mp3" },
+  { "Slam",      "http://stream.slam.nl/slam_mp3" },
 };
 #define STATION_COUNT (sizeof(s_stations) / sizeof(s_stations[0]))
 
