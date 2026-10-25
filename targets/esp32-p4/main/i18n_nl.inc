@@ -168,7 +168,6 @@
   { "Stream unavailable", "Stream niet beschikbaar" },
   { "Playing", "Speelt af" },
   { "One moment...", "Een moment..." },
-  { "Swipe right to go back", "Veeg naar rechts om terug te gaan" },
   { "Analog", "Analoog" },
   { "Digital", "Digitaal" },
   { "12-hour", "12-uurs" },
