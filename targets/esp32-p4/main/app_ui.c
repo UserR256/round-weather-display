@@ -3748,9 +3748,6 @@ static void build_radio_view(lv_obj_t *parent)
   lv_obj_set_width(s_ui.radio_status_label, LV_PCT(100));
   lv_obj_align(s_ui.radio_status_label, LV_ALIGN_CENTER, 0, 130);
 
-  s_ui.radio_hint_label = create_label(
-    s_ui.radio_view, &lv_font_montserrat_24, color_text_muted(), LV_TEXT_ALIGN_CENTER, "Swipe right to go back"
-  );
   lv_obj_set_width(s_ui.radio_hint_label, LV_PCT(100));
   lv_obj_align(s_ui.radio_hint_label, LV_ALIGN_CENTER, 0, 200);
 }
