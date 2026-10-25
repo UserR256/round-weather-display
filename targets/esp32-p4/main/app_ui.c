@@ -2499,6 +2499,7 @@ static void apply_status_night_state(bool active)
 
 static void apply_view_night_state(bool active)
 {
+  volume_arc_set_night(s_ui.volume_arc, active);
   apply_analog_night_state(active);
   apply_digital_night_state(active);
   apply_forecast_night_state(active);
@@ -2537,12 +2538,9 @@ static void set_view_mode(app_view_mode_t next_view)
   }
 
   if (s_ui.volume_arc != NULL) {
-    if (next_view == APP_VIEW_DIGITAL) {
-      lv_arc_set_value(s_ui.volume_arc, audio_alarm_get_volume());   /* stored volume may load after the UI is built */
-      lv_obj_clear_flag(s_ui.volume_arc, LV_OBJ_FLAG_HIDDEN);
-    } else {
-      lv_obj_add_flag(s_ui.volume_arc, LV_OBJ_FLAG_HIDDEN);
-    }
+    /* Part of the ring on every page. */
+    lv_arc_set_value(s_ui.volume_arc, audio_alarm_get_volume());   /* stored volume may load after the UI is built */
+    lv_obj_clear_flag(s_ui.volume_arc, LV_OBJ_FLAG_HIDDEN);
   }
 
   if (s_ui.forecast_view != NULL) {
