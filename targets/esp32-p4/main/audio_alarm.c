@@ -27,19 +27,8 @@ static StackType_t *s_radio_stack = NULL;
 static const char *TAG = "audio_alarm";
 static const char *NVS_NAMESPACE = "alarm";
 
-// MP3 streams only (the decoder is minimp3; AAC streams will not play).
-// Index 0 is the default. The chosen index is saved in NVS, so add new stations
-// at the end to keep an already saved choice pointing at the same station.
-static const radio_station_t s_stations[] = {
-  { "Radio 538", "http://25483.live.streamtheworld.com/RADIO538.mp3" },
-  { "3FM",       "http://icecast.omroep.nl/3fm-sb-mp3" },
-  { "Radio 10",  "http://playerservices.streamtheworld.com/api/livestream-redirect/RADIO10.mp3" },
-  { "Skyradio",  "http://playerservices.streamtheworld.com/api/livestream-redirect/SKYRADIO.mp3" },
-  { "Radio 2",   "http://icecast.omroep.nl/radio2-sb-mp3" },
-  { "Qmusic",    "http://stream.qmusic.nl/qmusic/mp3" },
-  { "Slam",      "http://stream.slam.nl/slam_mp3" },
-};
-#define STATION_COUNT (sizeof(s_stations) / sizeof(s_stations[0]))
+// The station list lives in radio_stations.c (editable from the web page).
+// Only the selected index is kept here (NVS key "station" in "alarm").
 
 static volatile uint8_t s_station = 0;
 static volatile uint32_t s_station_gen = 0;   // bumped on every change; the radio task reconnects
@@ -86,7 +75,7 @@ static esp_err_t load_from_nvs(void) {
   uint8_t volume = s_volume;
   nvs_get_u8(nvs, "volume", &volume);
   nvs_close(nvs);
-  s_station = station < STATION_COUNT ? station : 0;
+  s_station = station < radio_stations_count() ? station : 0;
   s_volume = volume > 100 ? 100 : volume;
 
   s_alarm.enabled = enabled;
@@ -224,9 +213,15 @@ static void radio_task(void *arg) {
   while (radio_active()) {
     s_radio_state = RADIO_STATE_CONNECTING;
     const uint32_t gen = s_station_gen;                       // read before the index (see audio_radio_set_station)
-    const radio_station_t *station = &s_stations[s_station];
-    ESP_LOGI(TAG, "Station: %s", station->name);
-    esp_http_client_handle_t client = radio_connect(station->url);
+    // A copy: the list can be replaced from the web page while we play.
+    radio_station_t station;
+    if (!radio_stations_get(s_station, &station)) {
+      ESP_LOGE(TAG, "No radio station configured");
+      gave_up = true;   // a radio alarm falls back to the beep
+      break;
+    }
+    ESP_LOGI(TAG, "Station: %s", station.name);
+    esp_http_client_handle_t client = radio_connect(station.url);
     if (!client) {
       if (++failures >= RADIO_MAX_RETRIES) { gave_up = true; break; }
       ESP_LOGW(TAG, "Retry %d/%d", failures, RADIO_MAX_RETRIES);
@@ -360,11 +355,19 @@ static bool launch_radio_task(bool may_wait) {
 }
 
 size_t audio_radio_station_count(void) {
-  return STATION_COUNT;
+  return radio_stations_count();
 }
 
-const radio_station_t *audio_radio_station(size_t index) {
-  return index < STATION_COUNT ? &s_stations[index] : NULL;
+bool audio_radio_station(size_t index, radio_station_t *out) {
+  return radio_stations_get(index, out);
+}
+
+static void save_station_index(uint8_t index) {
+  nvs_handle_t nvs;   // best effort; a failed save must not break playback
+  if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs) == ESP_OK) {
+    if (nvs_set_u8(nvs, "station", index) == ESP_OK) nvs_commit(nvs);
+    nvs_close(nvs);
+  }
 }
 
 size_t audio_radio_get_station(void) {
@@ -372,20 +375,31 @@ size_t audio_radio_get_station(void) {
 }
 
 esp_err_t audio_radio_set_station(size_t index) {
-  if (index >= STATION_COUNT) return ESP_ERR_INVALID_ARG;
+  if (index >= radio_stations_count()) return ESP_ERR_INVALID_ARG;
   if (index == s_station) return ESP_OK;
   s_station = (uint8_t) index;   // index first, then the generation: the task reads them in the other order
   s_station_gen++;
-
-  nvs_handle_t nvs;   // best effort; a failed save must not break playback
-  if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs) == ESP_OK) {
-    if (nvs_set_u8(nvs, "station", (uint8_t) index) == ESP_OK) nvs_commit(nvs);
-    nvs_close(nvs);
-  }
+  save_station_index((uint8_t) index);
   return ESP_OK;
 }
 
+void audio_radio_stations_changed(const char *previous_url) {
+  if (radio_stations_count() == 0) {
+    s_station = 0;
+    s_station_gen++;
+    audio_radio_stop();   // nothing left to play; a ringing radio alarm gives up and beeps
+    return;
+  }
+  int found = radio_stations_find_url(previous_url);
+  uint8_t index = found >= 0 ? (uint8_t) found : 0;
+  bool same_stream = found >= 0;
+  s_station = index;
+  if (!same_stream) s_station_gen++;   // the playing stream is gone: reconnect to the new selection
+  save_station_index(index);
+}
+
 esp_err_t audio_radio_start(void) {
+  if (radio_stations_count() == 0) return ESP_ERR_NOT_FOUND;
   if (s_radio_task || s_ringing) return ESP_ERR_INVALID_STATE;   // busy or the alarm owns the audio
   s_radio_manual = true;
   s_radio_state = RADIO_STATE_CONNECTING;

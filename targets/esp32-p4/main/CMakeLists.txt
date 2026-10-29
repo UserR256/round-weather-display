@@ -22,6 +22,8 @@ idf_component_register(
     "location_lookup.c"
     "location_scoring.c"
     "message_service.c"
+    "radio_stations.c"
+    "radio_web.c"
     "storm_conditions.c"
     "timezone_table.c"
     "weather_client.c"

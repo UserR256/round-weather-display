@@ -3662,12 +3662,16 @@ static void refresh_radio_view(void)
   lv_obj_set_style_bg_color(s_ui.radio_button, on ? lv_color_hex(0xa33a3a) : lv_color_hex(0x1f6fb5), 0);
 
   const size_t station_index = audio_radio_get_station();
-  const radio_station_t *station = audio_radio_station(station_index);
-  if (station != NULL) {
+  radio_station_t station;
+  if (audio_radio_station(station_index, &station)) {
     char text[48];
     snprintf(text, sizeof(text), "%u / %u", (unsigned) (station_index + 1), (unsigned) audio_radio_station_count());
-    set_label_text(s_ui.radio_title_label, station->name);
+    set_label_text(s_ui.radio_title_label, station.name);
     set_label_text(s_ui.radio_station_label, text);
+  } else {
+    /* Empty list: stations are added on the clock's web page. */
+    set_label_text(s_ui.radio_title_label, tr("No stations"));
+    set_label_text(s_ui.radio_station_label, tr("Add them via the web page"));
   }
 
   lv_obj_t *const controls[] = { s_ui.radio_button, s_ui.radio_prev_button, s_ui.radio_next_button };

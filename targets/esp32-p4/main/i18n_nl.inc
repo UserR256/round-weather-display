@@ -166,6 +166,8 @@
   { "Start", "Start" },
   { "Audio unavailable", "Audio niet beschikbaar" },
   { "Stream unavailable", "Stream niet beschikbaar" },
+  { "No stations", "Geen zenders" },
+  { "Add them via the web page", "Voeg ze toe via de webpagina" },
   { "Playing", "Speelt af" },
   { "One moment...", "Een moment..." },
   { "Analog", "Analoog" },

@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include "esp_err.h"
+#include "esp_http_server.h"
 
 #include "app_runtime.h"
 #include "device_config.h"
@@ -16,3 +17,7 @@ esp_err_t message_service_get_snapshot(
   bool *out_has_important
 );
 esp_err_t message_service_acknowledge_active(const char *device_id);
+
+// The local web server (port 80) started by message_service_init(), so other
+// modules can register their own pages and API handlers on it. NULL before init.
+httpd_handle_t message_service_http_server(void);

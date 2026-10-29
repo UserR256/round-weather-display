@@ -146,6 +146,107 @@
       background: rgba(255, 255, 255, 0.1);
       color: rgba(247, 250, 255, 0.94);
     }
+    /* --- Radio stations panel ------------------------------------------- */
+    .radio-panel {
+      border-radius: 24px;
+      padding: 22px 18px;
+      background: rgba(16, 23, 37, 0.76);
+      box-shadow:
+        inset 0 0 0 1px rgba(255, 255, 255, 0.06),
+        0 12px 30px rgba(0, 0, 0, 0.22);
+    }
+
+    .radio-panel h3 {
+      margin: 22px 0 12px;
+      font-size: 18px;
+      font-weight: 650;
+      color: rgba(230, 239, 250, 0.86);
+    }
+
+    .radio-hint {
+      margin: -8px 0 14px;
+      font-size: 14px;
+      color: rgba(224, 234, 247, 0.6);
+    }
+
+    .radio-list,
+    .radio-results {
+      display: grid;
+      gap: 8px;
+    }
+
+    .radio-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 14px;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.05);
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+    }
+
+    .radio-row.is-selected {
+      box-shadow: inset 0 0 0 2px rgba(107, 155, 255, 0.7);
+    }
+
+    .radio-row-name {
+      font-size: 17px;
+      font-weight: 600;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .radio-row-url {
+      font-size: 13px;
+      color: rgba(224, 234, 247, 0.55);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .radio-row-actions {
+      display: flex;
+      gap: 6px;
+    }
+
+    .radio-row-actions button,
+    .secondary-button {
+      border: 0;
+      border-radius: 999px;
+      padding: 9px 12px;
+      min-width: 38px;
+      background: rgba(255, 255, 255, 0.1);
+      color: rgba(247, 250, 255, 0.94);
+    }
+
+    .radio-row-actions button:disabled,
+    .secondary-button:disabled,
+    .primary-button:disabled {
+      opacity: 0.4;
+    }
+
+    .radio-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 16px;
+    }
+
+    .radio-search-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 140px;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    @media (max-width: 480px) {
+      .field-row,
+      .radio-search-row {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
   </style>
 </head>
 <body>
@@ -184,6 +285,49 @@
     <section class="active-panel">
       <h2>Active Messages</h2>
       <div id="active-messages" class="active-messages"></div>
+    </section>
+    <section class="radio-panel" id="radio-panel">
+      <h2>Radio Stations</h2>
+      <p class="radio-hint">Only MP3 streams play on the clock. Changes take effect after "Save list".</p>
+      <div id="radio-list" class="radio-list"></div>
+      <div class="radio-actions">
+        <button id="radio-save" class="primary-button" disabled>Save list</button>
+        <button id="radio-stop" class="secondary-button">Stop radio</button>
+        <button id="radio-reset" class="secondary-button">Restore defaults</button>
+      </div>
+      <div id="radio-status" class="compose-status" aria-live="polite"></div>
+
+      <h3>Find stations</h3>
+      <div class="radio-search-row">
+        <input id="radio-search-text" type="search" placeholder="Station name (optional)" />
+        <select id="radio-search-country">
+          <option value="">Any country</option>
+          <option value="NL">Netherlands</option>
+          <option value="BE">Belgium</option>
+          <option value="DE">Germany</option>
+          <option value="GB">United Kingdom</option>
+          <option value="US">United States</option>
+          <option value="FR">France</option>
+          <option value="ES">Spain</option>
+          <option value="IT">Italy</option>
+          <option value="AT">Austria</option>
+          <option value="CH">Switzerland</option>
+        </select>
+      </div>
+      <button id="radio-search" class="secondary-button">Search</button>
+      <p class="radio-hint" style="margin-top: 10px;">Pick a country without a name to see its most popular stations. Results come from radio-browser.info.</p>
+      <div id="radio-results" class="radio-results"></div>
+
+      <h3>Add a stream manually</h3>
+      <label class="field">
+        <span>Name</span>
+        <input id="radio-add-name" type="text" maxlength="39" placeholder="My station" />
+      </label>
+      <label class="field">
+        <span>Stream URL</span>
+        <input id="radio-add-url" type="url" maxlength="199" placeholder="http://example.com/stream.mp3" />
+      </label>
+      <button id="radio-add" class="secondary-button">Add to list</button>
     </section>
   </main>
 
@@ -351,6 +495,298 @@
       });
     }
 
+    /* --- Radio stations ------------------------------------------------- */
+    /* The list is edited locally and sent as a whole with "Save list". */
+    var RADIO_BROWSER_SERVERS = [
+      'https://de1.api.radio-browser.info',
+      'https://de2.api.radio-browser.info',
+      'https://fi1.api.radio-browser.info'
+    ];
+    var radio = {
+      saved: [],      // what the clock has
+      draft: [],      // what the page shows
+      selected: 0,
+      state: 'off',
+      max: 16,
+      nameMax: 39,
+      urlMax: 199
+    };
+
+    function radioDirty() {
+      return JSON.stringify(radio.saved) !== JSON.stringify(radio.draft);
+    }
+
+    function setRadioStatus(text, isError) {
+      var status = document.getElementById('radio-status');
+      if (!status) return;
+      status.textContent = text || '';
+      status.style.color = isError ? 'rgba(255, 164, 164, 0.96)' : 'rgba(232, 239, 251, 0.72)';
+    }
+
+    function radioStateLabel(state) {
+      return {
+        connecting: 'Connecting\u2026',
+        playing: 'Playing',
+        failed: 'Stream unavailable',
+        audio_failed: 'Audio unavailable'
+      }[state] || '';
+    }
+
+    function applyRadioResponse(data) {
+      radio.saved = (Array.isArray(data.stations) ? data.stations : []).map(function (s) {
+        return { name: s.name, url: s.url };
+      });
+      radio.selected = typeof data.selected === 'number' ? data.selected : 0;
+      radio.state = data.state || 'off';
+      if (data.max) radio.max = data.max;
+      if (data.nameMax) radio.nameMax = data.nameMax;
+      if (data.urlMax) radio.urlMax = data.urlMax;
+    }
+
+    async function radioRequest(path, body) {
+      var options = body === undefined
+        ? { cache: 'no-store' }
+        : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
+      var response = await fetch(path, options);
+      var data = await response.json();
+      if (!response.ok || data.error) throw new Error(data.error || ('HTTP ' + response.status));
+      return data;
+    }
+
+    function makeButton(label, title, onClick, disabled) {
+      var button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = label;
+      button.title = title;
+      button.setAttribute('aria-label', title);
+      button.disabled = !!disabled;
+      button.addEventListener('click', onClick);
+      return button;
+    }
+
+    function makeStationRow(station) {
+      var row = document.createElement('div');
+      row.className = 'radio-row';
+      var text = document.createElement('div');
+      text.style.minWidth = '0';
+      var name = document.createElement('div');
+      name.className = 'radio-row-name';
+      name.textContent = station.name;
+      var url = document.createElement('div');
+      url.className = 'radio-row-url';
+      url.textContent = station.url;
+      text.appendChild(name);
+      text.appendChild(url);
+      var actions = document.createElement('div');
+      actions.className = 'radio-row-actions';
+      row.appendChild(text);
+      row.appendChild(actions);
+      return { row: row, actions: actions };
+    }
+
+    function renderRadioList() {
+      var list = document.getElementById('radio-list');
+      if (!list) return;
+      list.replaceChildren();
+      var dirty = radioDirty();
+
+      if (radio.draft.length === 0) {
+        var empty = document.createElement('div');
+        empty.className = 'admin-message-meta';
+        empty.textContent = 'No stations yet. Search or add one below.';
+        list.appendChild(empty);
+      }
+
+      radio.draft.forEach(function (station, index) {
+        var parts = makeStationRow(station);
+        if (!dirty && index === radio.selected) {
+          parts.row.classList.add('is-selected');
+          var state = radioStateLabel(radio.state);
+          if (state) parts.row.querySelector('.radio-row-url').textContent = state + ' \u00b7 ' + station.url;
+        }
+        parts.actions.appendChild(makeButton('\u25b6', dirty ? 'Save the list first' : 'Play on the clock', function () {
+          playRadioStation(index);
+        }, dirty));
+        parts.actions.appendChild(makeButton('\u2191', 'Move up', function () {
+          var moved = radio.draft.splice(index, 1)[0];
+          radio.draft.splice(index - 1, 0, moved);
+          renderRadioList();
+        }, index === 0));
+        parts.actions.appendChild(makeButton('\u2193', 'Move down', function () {
+          var moved = radio.draft.splice(index, 1)[0];
+          radio.draft.splice(index + 1, 0, moved);
+          renderRadioList();
+        }, index === radio.draft.length - 1));
+        parts.actions.appendChild(makeButton('\u2715', 'Remove', function () {
+          radio.draft.splice(index, 1);
+          renderRadioList();
+        }));
+        list.appendChild(parts.row);
+      });
+
+      var save = document.getElementById('radio-save');
+      if (save) {
+        save.disabled = !dirty;
+        save.textContent = dirty ? 'Save list (' + radio.draft.length + '/' + radio.max + ')' : 'Saved';
+      }
+    }
+
+    function checkStreamUrl(url) {
+      if (!/^https?:\/\/\S+$/i.test(url)) return 'The URL must start with http:// or https:// and contain no spaces.';
+      if (/\.m3u8($|\?)/i.test(url)) return 'HLS streams (.m3u8) do not play on the clock.';
+      if (/\.(m3u|pls)($|\?)/i.test(url)) return 'This is a playlist file; use the stream URL inside it, or find the station via search.';
+      if (url.length > radio.urlMax) return 'The URL is longer than ' + radio.urlMax + ' characters.';
+      return '';
+    }
+
+    function addRadioStation(name, url) {
+      name = (name || '').trim().slice(0, radio.nameMax);
+      url = (url || '').trim();
+      if (!name) { setRadioStatus('Give the station a name.', true); return false; }
+      var problem = checkStreamUrl(url);
+      if (problem) { setRadioStatus(problem, true); return false; }
+      if (radio.draft.length >= radio.max) { setRadioStatus('The list is full (' + radio.max + ' stations).', true); return false; }
+      if (radio.draft.some(function (s) { return s.url === url; })) { setRadioStatus(name + ' is already in the list.', true); return false; }
+      radio.draft.push({ name: name, url: url });
+      setRadioStatus('Added ' + name + '. Don\u2019t forget to save.');
+      renderRadioList();
+      return true;
+    }
+
+    async function loadRadioStations(force) {
+      try {
+        var data = await radioRequest('/api/radio/stations');
+        var wasDirty = radioDirty();
+        applyRadioResponse(data);
+        if (force || !wasDirty) radio.draft = radio.saved.map(function (s) { return { name: s.name, url: s.url }; });
+        renderRadioList();
+      } catch (error) {
+        console.error('Failed to load radio stations:', error);
+        setRadioStatus('Could not load the station list.', true);
+      }
+    }
+
+    async function saveRadioStations() {
+      try {
+        var data = await radioRequest('/api/radio/stations', { stations: radio.draft });
+        applyRadioResponse(data);
+        radio.draft = radio.saved.map(function (s) { return { name: s.name, url: s.url }; });
+        setRadioStatus('Saved. The clock uses the new list now.');
+        renderRadioList();
+      } catch (error) {
+        setRadioStatus(error.message || 'Saving failed', true);
+      }
+    }
+
+    async function playRadioStation(index) {
+      try {
+        applyRadioResponse(await radioRequest('/api/radio/play', { index: index }));
+        setRadioStatus('');
+        renderRadioList();
+      } catch (error) {
+        setRadioStatus(error.message || 'Could not start the radio', true);
+      }
+    }
+
+    async function radioBrowserSearch(params) {
+      var query = new URLSearchParams(Object.assign({
+        codec: 'MP3',
+        hidebroken: 'true',
+        order: 'clickcount',
+        reverse: 'true',
+        limit: '30'
+      }, params)).toString();
+      var lastError = null;
+      for (var i = 0; i < RADIO_BROWSER_SERVERS.length; i++) {
+        var controller = new AbortController();
+        var timer = setTimeout(function () { controller.abort(); }, 6000);
+        try {
+          var response = await fetch(RADIO_BROWSER_SERVERS[i] + '/json/stations/search?' + query, { signal: controller.signal });
+          clearTimeout(timer);
+          if (!response.ok) throw new Error('HTTP ' + response.status);
+          return await response.json();
+        } catch (error) {
+          clearTimeout(timer);
+          lastError = error;
+        }
+      }
+      throw lastError || new Error('Search failed');
+    }
+
+    async function searchRadioStations() {
+      var text = document.getElementById('radio-search-text').value.trim();
+      var country = document.getElementById('radio-search-country').value;
+      var results = document.getElementById('radio-results');
+      if (!text && !country) { setRadioStatus('Enter a name or pick a country.', true); return; }
+
+      var params = {};
+      if (text) params.name = text;
+      if (country) params.countrycode = country;
+      results.replaceChildren();
+      setRadioStatus('Searching\u2026');
+
+      try {
+        var found = await radioBrowserSearch(params);
+        var seen = {};
+        var usable = found.filter(function (s) {
+          var url = (s.url_resolved || s.url || '').trim();   // url_resolved: playlist already unpacked
+          if (!url || seen[url] || String(s.codec).toUpperCase() !== 'MP3' || checkStreamUrl(url)) return false;
+          seen[url] = true;
+          s._stream = url;
+          return true;
+        });
+        setRadioStatus(usable.length ? '' : 'No MP3 stations found.');
+        usable.forEach(function (s) {
+          var name = (s.name || '').trim();
+          var parts = makeStationRow({ name: name, url: [s.countrycode, s.bitrate ? s.bitrate + ' kbps' : '', s.tags].filter(Boolean).join(' \u00b7 ') });
+          var add = makeButton('Add', 'Add to list', function () {
+            if (addRadioStation(name, s._stream)) add.disabled = true;
+          }, radio.draft.some(function (d) { return d.url === s._stream; }));
+          add.style.minWidth = '64px';
+          parts.actions.appendChild(add);
+          results.appendChild(parts.row);
+        });
+      } catch (error) {
+        console.error('Radio Browser search failed:', error);
+        setRadioStatus('Search is unavailable right now. You can still add a stream URL manually.', true);
+      }
+    }
+
+    function setupRadioPanel() {
+      document.getElementById('radio-save').addEventListener('click', saveRadioStations);
+      document.getElementById('radio-stop').addEventListener('click', async function () {
+        try {
+          applyRadioResponse(await radioRequest('/api/radio/play', { stop: true }));
+          renderRadioList();
+        } catch (error) {
+          setRadioStatus(error.message || 'Could not stop the radio', true);
+        }
+      });
+      document.getElementById('radio-reset').addEventListener('click', async function () {
+        if (!confirm('Replace the list with the built-in default stations?')) return;
+        try {
+          applyRadioResponse(await radioRequest('/api/radio/stations/reset', {}));
+          radio.draft = radio.saved.map(function (s) { return { name: s.name, url: s.url }; });
+          setRadioStatus('Default stations restored.');
+          renderRadioList();
+        } catch (error) {
+          setRadioStatus(error.message || 'Reset failed', true);
+        }
+      });
+      document.getElementById('radio-search').addEventListener('click', searchRadioStations);
+      document.getElementById('radio-search-text').addEventListener('keydown', function (event) {
+        if (event.key === 'Enter') searchRadioStations();
+      });
+      document.getElementById('radio-add').addEventListener('click', function () {
+        var name = document.getElementById('radio-add-name');
+        var url = document.getElementById('radio-add-url');
+        if (addRadioStation(name.value, url.value)) { name.value = ''; url.value = ''; }
+      });
+      window.addEventListener('beforeunload', function (event) {
+        if (radioDirty()) { event.preventDefault(); event.returnValue = ''; }
+      });
+    }
+
     async function initializeMessagesAdmin() {
       await loadTargets();
       setupMessageForm();
@@ -361,6 +797,12 @@
       // live instead of freezing them at page-load time.
       setInterval(loadTargets, 5000);
       setInterval(loadActiveMessages, 5000);
+
+      setupRadioPanel();
+      await loadRadioStations(true);
+      // Play state changes on the clock itself (and from other phones); an
+      // unsaved draft is left alone.
+      setInterval(function () { loadRadioStations(false); }, 5000);
     }
 
     initializeMessagesAdmin();

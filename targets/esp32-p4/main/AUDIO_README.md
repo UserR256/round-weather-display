@@ -20,3 +20,17 @@ audio_beep_deinit();
 - This is a minimal implementation. Full ES8311 codec initialization (I2C) may be needed for reliable volume control.
 - Next steps: proper ES8311 driver, volume control, and later internet radio.
 - The speaker must be connected to the PH2.0 connector.
+
+## Radio stations
+The station list is no longer hard-coded. It lives in `radio_stations.c`
+(saved in NVS, namespace `radio`, max 16 stations) and is edited from the
+clock's own web page (`http://<clock-ip>/`, panel "Radio Stations"):
+
+- search stations via radio-browser.info (by name and/or country; pick only a
+  country to get its most popular MP3 stations), or paste a stream URL;
+- reorder, remove, play on the clock, and "Save list";
+- "Restore defaults" brings back the built-in Dutch list.
+
+Only MP3 streams play (minimp3). Playlist (.m3u/.pls) and HLS (.m3u8) URLs are
+rejected; search results use Radio Browser's `url_resolved`, which is the
+stream behind a playlist. API: see `radio_web.h`.

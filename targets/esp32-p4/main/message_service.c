@@ -2012,6 +2012,9 @@ static esp_err_t start_http_server(void)
   config.stack_size = 12288;
   config.server_port = MESSAGE_SERVICE_PORT;
   config.uri_match_fn = httpd_uri_match_wildcard;
+  /* Default is 8 and the message API alone uses all 8; radio_web.c adds its
+   * own handlers on this same server. */
+  config.max_uri_handlers = 16;
 
   esp_err_t err = httpd_start(&s_http_server, &config);
   if (err != ESP_OK) {
@@ -2261,4 +2264,9 @@ esp_err_t message_service_acknowledge_active(const char *device_id)
 
   xSemaphoreGive(s_message_mutex);
   return ESP_OK;
+}
+
+httpd_handle_t message_service_http_server(void)
+{
+  return s_http_server;
 }

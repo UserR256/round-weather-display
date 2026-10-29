@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "esp_err.h"
+#include "radio_stations.h"
 
 typedef enum {
   ALARM_TYPE_BEEP = 0,
@@ -34,19 +35,22 @@ typedef enum {
   RADIO_STATE_AUDIO_FAILED,   // stream is fine but the audio output could not be set up (memory)
 } radio_state_t;
 
-typedef struct {
-  const char *name;
-  const char *url;   // must be an MP3 stream (the decoder is MP3 only)
-} radio_station_t;
-
+// Stations come from radio_stations.c (editable from the local web page).
 size_t audio_radio_station_count(void);
-const radio_station_t *audio_radio_station(size_t index);
+// Copies station `index` into `out`; false if out of range.
+bool audio_radio_station(size_t index, radio_station_t *out);
 size_t audio_radio_get_station(void);
 // Selects the station (also used by the radio alarm), saves it, and switches
 // the running stream if the radio is playing.
 esp_err_t audio_radio_set_station(size_t index);
+// Call after the station list was replaced. Keeps the selection on the same
+// stream URL if it is still in the list (otherwise station 0), reconnects a
+// playing radio only if the stream actually changed, and stops it if the list
+// is now empty.
+void audio_radio_stations_changed(const char *previous_url);
 
-esp_err_t audio_radio_start(void);   // ESP_ERR_INVALID_STATE if still shutting down: try again
+esp_err_t audio_radio_start(void);   // ESP_ERR_INVALID_STATE if still shutting down: try again,
+                                     // ESP_ERR_NOT_FOUND if there are no stations
 void audio_radio_stop(void);
 radio_state_t audio_radio_get_state(void);
 
