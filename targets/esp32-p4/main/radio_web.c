@@ -140,9 +140,12 @@ static esp_err_t play_handler(httpd_req_t *req) {
     if (getpeername(httpd_req_to_sockfd(req), (struct sockaddr *) &addr, &addr_len) == 0) {
       if (addr.ss_family == AF_INET) {
         inet_ntop(AF_INET, &((struct sockaddr_in *) &addr)->sin_addr, peer, sizeof(peer));
-      } else if (addr.ss_family == AF_INET6) {
+      }
+#if LWIP_IPV6
+      else if (addr.ss_family == AF_INET6) {
         inet_ntop(AF_INET6, &((struct sockaddr_in6 *) &addr)->sin6_addr, peer, sizeof(peer));
       }
+#endif
     }
     ESP_LOGI(TAG, "Radio start requested by: web page (%s), station %u", peer, (unsigned) station);
     esp_err_t err = audio_radio_start();   // when already playing, set_station switched the stream
