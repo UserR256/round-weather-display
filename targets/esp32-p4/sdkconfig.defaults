@@ -1,5 +1,8 @@
-CONFIG_ESP32P4_SELECTS_REV_LESS_V3=y
-CONFIG_ESP32P4_REV_MIN_100=y
+# Chip revision v3.x (current Waveshare boards ship with v3.2). A v1.x and a
+# v3.x chip cannot share one firmware image; for an old v1.x board set
+# CONFIG_ESP32P4_SELECTS_REV_LESS_V3=y and CONFIG_ESP32P4_REV_MIN_100=y in your
+# local sdkconfig. Needs ESP-IDF v5.5.3 or later.
+# CONFIG_ESP32P4_SELECTS_REV_LESS_V3 is not set
 CONFIG_SPIRAM=y
 CONFIG_SPIRAM_XIP_FROM_PSRAM=y
 CONFIG_SPIRAM_MODE_HEX=y
