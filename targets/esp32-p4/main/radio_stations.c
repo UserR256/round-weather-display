@@ -5,6 +5,7 @@
 #include <string.h>
 #include <strings.h>
 
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -32,16 +33,25 @@ static const struct { const char *name; const char *url; } DEFAULT_STATIONS[] = 
 };
 #define DEFAULT_COUNT (sizeof(DEFAULT_STATIONS) / sizeof(DEFAULT_STATIONS[0]))
 
-static radio_station_t s_stations[RADIO_STATIONS_MAX];
+// The list (~3.8 KB) and every scratch copy live in PSRAM: internal RAM is
+// what TLS and the I2S DMA buffers fight over while the radio plays.
+#define STATIONS_BYTES (RADIO_STATIONS_MAX * sizeof(radio_station_t))
+static radio_station_t *s_stations = NULL;
 static size_t s_count = 0;
 static volatile uint32_t s_generation = 0;
 static SemaphoreHandle_t s_mutex = NULL;
+
+static radio_station_t *alloc_station_array(void) {
+  radio_station_t *p = heap_caps_calloc(RADIO_STATIONS_MAX, sizeof(radio_station_t),
+                                        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  return p != NULL ? p : calloc(RADIO_STATIONS_MAX, sizeof(radio_station_t));
+}
 
 static void lock(void)   { xSemaphoreTake(s_mutex, portMAX_DELAY); }
 static void unlock(void) { xSemaphoreGive(s_mutex); }
 
 static void load_defaults_locked(void) {
-  memset(s_stations, 0, sizeof(s_stations));
+  memset(s_stations, 0, STATIONS_BYTES);
   s_count = 0;
   for (size_t i = 0; i < DEFAULT_COUNT && i < RADIO_STATIONS_MAX; i++) {
     strlcpy(s_stations[i].name, DEFAULT_STATIONS[i].name, sizeof(s_stations[i].name));
@@ -148,7 +158,9 @@ static bool load_locked(void) {
   const cJSON *list = cJSON_GetObjectItemCaseSensitive(root, "s");
   if (!cJSON_IsArray(list)) { cJSON_Delete(root); return false; }
 
-  radio_station_t loaded[RADIO_STATIONS_MAX];
+  // Not on the stack: this runs on the 8 KB main task.
+  radio_station_t *loaded = alloc_station_array();
+  if (loaded == NULL) { cJSON_Delete(root); return false; }
   size_t count = 0;
   const cJSON *pair;
   cJSON_ArrayForEach(pair, list) {
@@ -164,8 +176,9 @@ static bool load_locked(void) {
   cJSON_Delete(root);
 
   // An empty saved list is valid (the user removed everything).
-  memcpy(s_stations, loaded, count * sizeof(loaded[0]));
+  memcpy(s_stations, loaded, STATIONS_BYTES);
   s_count = count;
+  free(loaded);
   return true;
 }
 
@@ -175,6 +188,10 @@ esp_err_t radio_stations_init(void) {
   if (s_mutex == NULL) {
     s_mutex = xSemaphoreCreateMutex();
     if (s_mutex == NULL) return ESP_ERR_NO_MEM;
+  }
+  if (s_stations == NULL) {
+    s_stations = alloc_station_array();
+    if (s_stations == NULL) return ESP_ERR_NO_MEM;
   }
   lock();
   if (load_locked()) {
@@ -228,7 +245,7 @@ esp_err_t radio_stations_replace_from_json(const cJSON *array, const char **out_
   }
 
   // Validate everything into a scratch copy first: all or nothing.
-  radio_station_t *next = calloc(RADIO_STATIONS_MAX, sizeof(radio_station_t));
+  radio_station_t *next = alloc_station_array();
   if (next == NULL) { *out_error = "Out of memory"; return ESP_ERR_NO_MEM; }
   size_t count = 0;
   const cJSON *item;
@@ -243,7 +260,7 @@ esp_err_t radio_stations_replace_from_json(const cJSON *array, const char **out_
   }
 
   lock();
-  memcpy(s_stations, next, sizeof(s_stations));
+  memcpy(s_stations, next, STATIONS_BYTES);
   s_count = count;
   esp_err_t err = save_locked();
   s_generation++;

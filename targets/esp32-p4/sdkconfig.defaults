@@ -62,3 +62,11 @@ CONFIG_LV_FONT_MONTSERRAT_18=y
 CONFIG_LV_FONT_MONTSERRAT_24=y
 CONFIG_LV_FONT_MONTSERRAT_32=y
 CONFIG_LV_FONT_MONTSERRAT_48=y
+# TLS while the radio plays. The I2S DMA buffers take ~16 KB of DMA-capable
+# internal RAM; the hardware AES engine then cannot get its own DMA bounce
+# buffer ("esp-aes: Failed to allocate memory for start alignment buffer",
+# mbedtls -0x0001) and every HTTPS request fails (weather, https streams).
+# Software AES needs no DMA memory and is fast enough on the P4 for this.
+CONFIG_MBEDTLS_HARDWARE_AES=n
+# TLS record buffers (~20 KB per connection) in PSRAM instead of internal RAM.
+CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y
