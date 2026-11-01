@@ -228,6 +228,11 @@ static void ui_heartbeat_task(void *arg)
     }
 
     audio_alarm_check();
+
+    static const char *const radio_names[] = { "off", "connecting", "playing", "failed", "audio_failed" };
+    const radio_state_t radio_state = audio_radio_get_state();
+    heap_diag_periodic(uptime_seconds,
+                       (size_t) radio_state < sizeof(radio_names) / sizeof(radio_names[0]) ? radio_names[radio_state] : "?");
   }
 }
 
@@ -381,6 +386,7 @@ static void weather_service_task(void *arg)
     );
 
     app_weather_snapshot_t weather_snapshot = {0};
+    heap_diag("before weather fetch");
     esp_err_t weather_err = weather_client_fetch(&s_device_config, &weather_snapshot);
     if (weather_err != ESP_OK) {
       bool had_previous_weather = runtime_state_has_valid_weather();

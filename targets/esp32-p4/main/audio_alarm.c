@@ -10,6 +10,7 @@
 #include "esp_http_client.h"
 #include "esp_crt_bundle.h"
 #include "esp_heap_caps.h"
+#include "heap_diag.h"
 
 #define MINIMP3_IMPLEMENTATION
 #include "minimp3.h"
@@ -233,6 +234,7 @@ static void radio_task(void *arg) {
       // Without this check the radio "played" into a closed codec: silent, but
       // reported as playing.
       ESP_LOGE(TAG, "Audio output unavailable");
+      heap_diag("radio audio init failed");
       esp_http_client_close(client);
       esp_http_client_cleanup(client);
       audio_failed = true;
@@ -240,6 +242,7 @@ static void radio_task(void *arg) {
       vTaskDelay(pdMS_TO_TICKS(RADIO_RETRY_DELAY_MS));
       continue;
     }
+    heap_diag("radio audio up");
     audio_beep_set_volume(s_volume);
     mp3dec_init(dec);
     int mp3_buf_len = 0;
@@ -427,6 +430,7 @@ static void start_alarm_sound(void) {
   // beep_task waits for it.
   s_radio_manual = false;
   if (s_alarm.type == ALARM_TYPE_RADIO) {
+    ESP_LOGI(TAG, "Radio start requested by: alarm");
     if (!launch_radio_task(true)) {
       ESP_LOGE(TAG, "Radio task failed to start");
     }

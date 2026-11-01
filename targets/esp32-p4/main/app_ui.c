@@ -3705,10 +3705,13 @@ static void radio_button_event_cb(lv_event_t *event)
   const radio_state_t state = audio_radio_get_state();
   if (state == RADIO_STATE_CONNECTING || state == RADIO_STATE_PLAYING) {
     audio_radio_stop();
-  } else if (audio_radio_start() == ESP_ERR_INVALID_STATE && !audio_alarm_is_ringing()) {
-    /* The previous session is still shutting down; a second tap works. */
-    set_label_text(s_ui.radio_status_label, tr("One moment..."));
-    return;
+  } else {
+    ESP_LOGI(TAG, "Radio start requested by: screen button");
+    if (audio_radio_start() == ESP_ERR_INVALID_STATE && !audio_alarm_is_ringing()) {
+      /* The previous session is still shutting down; a second tap works. */
+      set_label_text(s_ui.radio_status_label, tr("One moment..."));
+      return;
+    }
   }
   refresh_radio_view();
 }
