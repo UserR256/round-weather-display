@@ -133,7 +133,11 @@ static esp_err_t http_event_handler(esp_http_client_event_t *event)
 
   switch (event->event_id) {
     case HTTP_EVENT_ON_DATA:
-      return append_http_data(buffer, (const char *) event->data, event->data_len);
+      if (append_http_data(buffer, (const char *) event->data, event->data_len) != ESP_OK) {
+        ESP_LOGE(TAG, "Out of memory while receiving weather data (%u bytes so far)", (unsigned) buffer->length);
+        return ESP_ERR_NO_MEM;
+      }
+      return ESP_OK;
     default:
       return ESP_OK;
   }
@@ -290,33 +294,48 @@ esp_err_t weather_client_fetch(
 
   esp_http_client_handle_t client = esp_http_client_init(&http_config);
   if (client == NULL) {
+    ESP_LOGW(TAG, "Weather HTTP client init failed (out of memory?)");
     return ESP_FAIL;
   }
 
   esp_err_t err = esp_http_client_perform(client);
   int status_code = esp_http_client_get_status_code(client);
+  int64_t content_length = esp_http_client_get_content_length(client);   /* -1 when chunked */
   esp_http_client_cleanup(client);
 
   if (err != ESP_OK) {
+    ESP_LOGW(TAG, "Weather request failed: %s (received %u bytes)", esp_err_to_name(err), (unsigned) response.length);
     free(response.data);
     return err;
   }
 
   if (status_code < 200 || status_code >= 300) {
+    /* Open-Meteo puts the reason in a small JSON body, e.g. {"reason":"..."} */
+    ESP_LOGW(TAG, "Weather server answered HTTP %d: %.160s", status_code, response.data != NULL ? response.data : "");
     free(response.data);
     return ESP_FAIL;
   }
 
   cJSON *root = cJSON_Parse(response.data);
-  free(response.data);
   if (root == NULL) {
+    /* Usually a body cut off mid-transfer: compare received with expected. */
+    ESP_LOGW(
+      TAG,
+      "Weather response is not valid JSON: received %u bytes, expected %lld%s",
+      (unsigned) response.length,
+      (long long) content_length,
+      response.data == NULL ? " (no body, out of memory?)" : ""
+    );
+    free(response.data);
     return ESP_FAIL;
   }
+  free(response.data);
 
   cJSON *current_weather = cJSON_GetObjectItemCaseSensitive(root, "current_weather");
   cJSON *daily = cJSON_GetObjectItemCaseSensitive(root, "daily");
   cJSON *hourly = cJSON_GetObjectItemCaseSensitive(root, "hourly");
   if (!cJSON_IsObject(current_weather) || !cJSON_IsObject(daily)) {
+    ESP_LOGW(TAG, "Weather response lacks %s", !cJSON_IsObject(current_weather) ? "current_weather" : "daily");
     cJSON_Delete(root);
     return ESP_FAIL;
   }
@@ -325,6 +344,7 @@ esp_err_t weather_client_fetch(
   cJSON *current_code = cJSON_GetObjectItemCaseSensitive(current_weather, "weathercode");
   cJSON *current_is_day = cJSON_GetObjectItemCaseSensitive(current_weather, "is_day");
   if (!cJSON_IsNumber(current_temperature) || !cJSON_IsNumber(current_code) || !cJSON_IsNumber(current_is_day)) {
+    ESP_LOGW(TAG, "Weather response: current_weather is incomplete");
     cJSON_Delete(root);
     return ESP_FAIL;
   }
@@ -372,12 +392,14 @@ esp_err_t weather_client_fetch(
     const char *date = get_string_array_item(daily_dates, i + 1);
 
     if (!fill_temperature_range(daily, i + 1, &high, &low)) {
+      ESP_LOGW(TAG, "Weather response: no temperatures for forecast day %d", i + 1);
       cJSON_Delete(root);
       return ESP_FAIL;
     }
 
     code = read_daily_weather_code(daily, i + 1, &code_ok);
     if (!code_ok) {
+      ESP_LOGW(TAG, "Weather response: no weather code for forecast day %d", i + 1);
       cJSON_Delete(root);
       return ESP_FAIL;
     }
