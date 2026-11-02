@@ -24,6 +24,7 @@ idf_component_register(
     "message_service.c"
     "radio_stations.c"
     "radio_web.c"
+    "settings_web.c"
     "storm_conditions.c"
     "timezone_table.c"
     "weather_client.c"
@@ -31,7 +32,7 @@ idf_component_register(
   INCLUDE_DIRS
     "."
   EMBED_TXTFILES
-    "web/messages.html"
+    "web/index.html"
   REQUIRES
     nvs_flash
     esp_event

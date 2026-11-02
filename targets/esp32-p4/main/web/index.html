@@ -1,0 +1,1509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Clock</title>
+  <style>
+    html,
+    body {
+      margin: 0;
+      min-height: 100%;
+      background:
+        radial-gradient(circle at top, rgba(64, 89, 139, 0.24) 0%, rgba(14, 20, 32, 0.96) 48%, #06080e 100%);
+      color: rgba(246, 250, 255, 0.94);
+      font-family: "Avenir Next", "Helvetica Neue", Arial, sans-serif;
+      color-scheme: dark;
+    }
+
+    body {
+      padding: 24px 16px 48px;
+    }
+
+    .messages-admin {
+      max-width: 680px;
+      margin: 0 auto;
+      display: grid;
+      gap: 24px;
+    }
+
+    .card,
+    .compose-panel,
+    .active-panel {
+      border-radius: 24px;
+      padding: 22px 18px;
+      background: rgba(16, 23, 37, 0.76);
+      box-shadow:
+        inset 0 0 0 1px rgba(255, 255, 255, 0.06),
+        0 12px 30px rgba(0, 0, 0, 0.22);
+    }
+
+    h1,
+    h2 {
+      margin: 0 0 18px;
+      font-weight: 650;
+      letter-spacing: -0.02em;
+    }
+
+    h1 {
+      font-size: 30px;
+    }
+
+    h2 {
+      font-size: 24px;
+    }
+
+    .field,
+    .field-row {
+      display: grid;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .field-row {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .field span {
+      font-size: 15px;
+      font-weight: 600;
+      color: rgba(230, 239, 250, 0.78);
+    }
+
+    textarea,
+    input,
+    select,
+    button {
+      font: inherit;
+    }
+
+    textarea,
+    input,
+    select {
+      width: 100%;
+      border: 0;
+      border-radius: 16px;
+      padding: 14px 16px;
+      background: rgba(255, 255, 255, 0.08);
+      color: rgba(248, 251, 255, 0.96);
+      box-sizing: border-box;
+    }
+
+    select option {
+      background: #182133;
+      color: #f6faff;
+    }
+
+    textarea {
+      min-height: 116px;
+      resize: vertical;
+    }
+
+    .primary-button {
+      border: 0;
+      border-radius: 999px;
+      padding: 14px 18px;
+      background: linear-gradient(180deg, rgba(107, 155, 255, 0.96), rgba(68, 116, 214, 0.96));
+      color: white;
+      font-weight: 650;
+    }
+
+    .compose-status {
+      min-height: 20px;
+      margin-top: 10px;
+      font-size: 15px;
+      color: rgba(232, 239, 251, 0.72);
+    }
+
+    .active-messages {
+      display: grid;
+      gap: 12px;
+    }
+
+    .admin-message {
+      display: grid;
+      gap: 8px;
+      padding: 16px;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.05);
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+    }
+
+    .admin-message-text {
+      font-size: 22px;
+      font-weight: 560;
+      line-height: 1.18;
+    }
+
+    .admin-message-meta {
+      font-size: 15px;
+      color: rgba(224, 234, 247, 0.66);
+    }
+
+    .admin-message-actions {
+      display: flex;
+      justify-content: flex-end;
+    }
+
+    .admin-message-actions button {
+      border: 0;
+      border-radius: 999px;
+      padding: 10px 14px;
+      background: rgba(255, 255, 255, 0.1);
+      color: rgba(247, 250, 255, 0.94);
+    }
+    /* --- Radio stations panel ------------------------------------------- */
+    .radio-panel {
+      border-radius: 24px;
+      padding: 22px 18px;
+      background: rgba(16, 23, 37, 0.76);
+      box-shadow:
+        inset 0 0 0 1px rgba(255, 255, 255, 0.06),
+        0 12px 30px rgba(0, 0, 0, 0.22);
+    }
+
+    .radio-panel h3 {
+      margin: 22px 0 12px;
+      font-size: 18px;
+      font-weight: 650;
+      color: rgba(230, 239, 250, 0.86);
+    }
+
+    .radio-hint {
+      margin: -8px 0 14px;
+      font-size: 14px;
+      color: rgba(224, 234, 247, 0.6);
+    }
+
+    .radio-list,
+    .radio-results {
+      display: grid;
+      gap: 8px;
+    }
+
+    .radio-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 14px;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.05);
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+    }
+
+    .radio-row.is-selected {
+      box-shadow: inset 0 0 0 2px rgba(107, 155, 255, 0.7);
+    }
+
+    .radio-row-name {
+      font-size: 17px;
+      font-weight: 600;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .radio-row-url {
+      font-size: 13px;
+      color: rgba(224, 234, 247, 0.55);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .radio-row-actions {
+      display: flex;
+      gap: 6px;
+    }
+
+    .radio-row-actions button,
+    .secondary-button {
+      border: 0;
+      border-radius: 999px;
+      padding: 9px 12px;
+      min-width: 38px;
+      background: rgba(255, 255, 255, 0.1);
+      color: rgba(247, 250, 255, 0.94);
+    }
+
+    .radio-row-actions button:disabled,
+    .secondary-button:disabled,
+    .primary-button:disabled {
+      opacity: 0.4;
+    }
+
+    .radio-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 16px;
+    }
+
+    .radio-search-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 140px;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    /* --- Header and tabs ------------------------------------------------ */
+    .page-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .page-header h1 {
+      margin: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .page-header-meta {
+      flex: none;
+      font-size: 14px;
+      color: rgba(224, 234, 247, 0.6);
+    }
+
+    .tabs {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 4px;
+      padding: 4px;
+      border-radius: 999px;
+      background: rgba(10, 15, 25, 0.92);
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+      backdrop-filter: blur(8px);
+    }
+
+    .tabs button {
+      border: 0;
+      border-radius: 999px;
+      padding: 11px 8px;
+      background: transparent;
+      color: rgba(230, 239, 250, 0.7);
+      font-weight: 600;
+    }
+
+    .tabs button[aria-selected="true"] {
+      background: rgba(107, 155, 255, 0.9);
+      color: white;
+    }
+
+    .tab-panel {
+      display: grid;
+      gap: 24px;
+    }
+
+    .tab-panel[hidden] {
+      display: none;
+    }
+
+    /* --- Settings ------------------------------------------------------- */
+    .card h3 {
+      margin: 24px 0 12px;
+      font-size: 18px;
+      font-weight: 650;
+      color: rgba(230, 239, 250, 0.86);
+    }
+
+    .card h2 + h3 {
+      margin-top: 0;
+    }
+
+    .setting-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 12px;
+      min-height: 48px;
+      margin-bottom: 10px;
+    }
+
+    .setting-row > span {
+      font-size: 15px;
+      font-weight: 600;
+      color: rgba(230, 239, 250, 0.78);
+    }
+
+    .setting-row[hidden] {
+      display: none;
+    }
+
+    .segmented {
+      display: inline-flex;
+      padding: 3px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .segmented button {
+      border: 0;
+      border-radius: 999px;
+      padding: 8px 14px;
+      background: transparent;
+      color: rgba(230, 239, 250, 0.72);
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .segmented button[aria-pressed="true"] {
+      background: rgba(255, 255, 255, 0.9);
+      color: #10182a;
+    }
+
+    .switch {
+      position: relative;
+      width: 52px;
+      height: 30px;
+      flex: none;
+    }
+
+    .switch input {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      opacity: 0;
+      cursor: pointer;
+    }
+
+    .switch span {
+      position: absolute;
+      inset: 0;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.16);
+      pointer-events: none;
+      transition: background 0.15s;
+    }
+
+    .switch span::after {
+      content: "";
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: white;
+      transition: transform 0.15s;
+    }
+
+    .switch input:checked + span {
+      background: rgba(84, 200, 130, 0.95);
+    }
+
+    .switch input:checked + span::after {
+      transform: translateX(22px);
+    }
+
+    .switch input:focus-visible + span {
+      outline: 2px solid rgba(107, 155, 255, 0.9);
+      outline-offset: 2px;
+    }
+
+    .field-hint {
+      margin: -8px 0 16px;
+      font-size: 14px;
+      color: rgba(224, 234, 247, 0.6);
+    }
+
+    .readonly-value {
+      font-size: 16px;
+      color: rgba(246, 250, 255, 0.9);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .time-pair {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    input[type="range"] {
+      padding: 0;
+      background: transparent;
+      accent-color: rgb(107, 155, 255);
+    }
+
+    .card-footer {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+      margin-top: 20px;
+    }
+
+    @media (max-width: 480px) {
+      .field-row,
+      .radio-search-row,
+      .time-pair {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .setting-row {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 8px;
+      }
+
+      .setting-row .switch {
+        justify-self: start;
+      }
+
+      .segmented {
+        display: grid;
+        grid-auto-flow: column;
+        grid-auto-columns: minmax(0, 1fr);
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="messages-admin">
+    <header class="page-header">
+      <h1 id="page-title">Clock</h1>
+      <div class="page-header-meta" id="page-meta"></div>
+    </header>
+
+    <nav class="tabs" role="tablist" aria-label="Sections">
+      <button type="button" role="tab" id="tab-messages" aria-controls="panel-messages" data-tab="messages">Messages</button>
+      <button type="button" role="tab" id="tab-settings" aria-controls="panel-settings" data-tab="settings">Settings</button>
+      <button type="button" role="tab" id="tab-radio" aria-controls="panel-radio" data-tab="radio">Radio</button>
+    </nav>
+
+    <div class="tab-panel" role="tabpanel" id="panel-messages" aria-labelledby="tab-messages" data-panel="messages">
+      <section class="compose-panel">
+        <h2>New Message</h2>
+        <label class="field">
+          <span>Message</span>
+          <textarea id="msg-text" maxlength="180" placeholder="Dinner is Ready"></textarea>
+        </label>
+        <label class="field">
+          <span>Sender</span>
+          <input id="msg-sender" type="text" maxlength="40" placeholder="Alex" />
+        </label>
+        <div class="field-row">
+          <label class="field">
+            <span>Target</span>
+            <select id="msg-target"></select>
+          </label>
+          <label class="field">
+            <span>Priority</span>
+            <select id="msg-priority">
+              <option value="normal">Normal</option>
+              <option value="important">Important</option>
+            </select>
+          </label>
+        </div>
+        <label class="field">
+          <span>Expires</span>
+          <input id="msg-expires" type="datetime-local" />
+        </label>
+        <button id="send-message" class="primary-button">Send Message</button>
+        <div id="compose-status" class="compose-status" aria-live="polite"></div>
+      </section>
+
+      <section class="active-panel">
+        <h2>Active Messages</h2>
+        <div id="active-messages" class="active-messages"></div>
+      </section>
+    </div>
+
+    <div class="tab-panel" role="tabpanel" id="panel-settings" aria-labelledby="tab-settings" data-panel="settings" hidden>
+      <section class="card" id="settings-panel">
+        <h2>Settings</h2>
+
+        <h3>Clock</h3>
+        <label class="field">
+          <span>Room name</span>
+          <input id="set-room-name" type="text" maxlength="63" autocomplete="off" />
+        </label>
+        <div class="setting-row">
+          <span>Home screen</span>
+          <div class="segmented" data-setting="clockFace">
+            <button type="button" data-value="digital">Digital</button>
+            <button type="button" data-value="analog">Analog</button>
+          </div>
+        </div>
+        <div class="setting-row">
+          <span>Time format</span>
+          <div class="segmented" data-setting="timeFormat">
+            <button type="button" data-value="24">24-hour</button>
+            <button type="button" data-value="12">12-hour</button>
+          </div>
+        </div>
+        <div class="setting-row" id="set-leading-zero-row">
+          <span>Leading zero (09:30)</span>
+          <label class="switch"><input id="set-leading-zero" type="checkbox" aria-label="Leading zero" /><span></span></label>
+        </div>
+        <div class="setting-row">
+          <span>Language on the clock</span>
+          <div class="segmented" data-setting="language">
+            <button type="button" data-value="nl">Nederlands</button>
+            <button type="button" data-value="en">English</button>
+          </div>
+        </div>
+
+        <h3>Weather</h3>
+        <label class="field">
+          <span>Location</span>
+          <input id="set-location" type="text" maxlength="63" autocomplete="off" placeholder="Amsterdam, Netherlands" />
+        </label>
+        <p class="field-hint" id="set-location-info"></p>
+        <div class="setting-row">
+          <span>Units</span>
+          <div class="segmented" data-setting="units">
+            <button type="button" data-value="metric">Metric</button>
+            <button type="button" data-value="imperial">Imperial</button>
+          </div>
+        </div>
+
+        <h3>Night shift</h3>
+        <div class="setting-row">
+          <span>Dim the display at night</span>
+          <label class="switch"><input id="set-night-shift" type="checkbox" aria-label="Night shift" /><span></span></label>
+        </div>
+        <div class="time-pair" id="set-night-times">
+          <label class="field">
+            <span>From</span>
+            <input id="set-night-start" type="time" />
+          </label>
+          <label class="field">
+            <span>Until</span>
+            <input id="set-night-end" type="time" />
+          </label>
+        </div>
+
+        <h3>House messages</h3>
+        <div class="setting-row">
+          <span>Messages between clocks</span>
+          <div class="segmented" data-setting="messageSharing">
+            <button type="button" data-value="single">This clock</button>
+            <button type="button" data-value="shared">Shared</button>
+          </div>
+        </div>
+        <label class="field">
+          <span>Device ID</span>
+          <input id="set-device-id" type="text" maxlength="63" autocomplete="off" spellcheck="false" />
+        </label>
+        <p class="field-hint">Must be unique per clock when messages are shared. Letters, digits, - _ and . only.</p>
+
+        <h3>Wi-Fi</h3>
+        <div class="setting-row">
+          <span>Network</span>
+          <div class="readonly-value" id="set-wifi-ssid">&ndash;</div>
+        </div>
+        <p class="field-hint">Change the Wi-Fi network on the clock itself, so you can't lock yourself out of this page.</p>
+
+        <div class="card-footer">
+          <button id="settings-save" class="primary-button" disabled>Save &amp; restart</button>
+          <button id="settings-revert" class="secondary-button" disabled>Undo changes</button>
+        </div>
+        <div id="settings-status" class="compose-status" aria-live="polite"></div>
+      </section>
+
+      <section class="card" id="alarm-panel">
+        <h2>Alarm</h2>
+        <div class="setting-row">
+          <span>Alarm on</span>
+          <label class="switch"><input id="alarm-enabled" type="checkbox" aria-label="Alarm on" /><span></span></label>
+        </div>
+        <div class="field-row">
+          <label class="field">
+            <span>Time</span>
+            <input id="alarm-time" type="time" />
+          </label>
+          <div class="field">
+            <span>Sound</span>
+            <div class="segmented" data-alarm="type">
+              <button type="button" data-value="beep">Beep</button>
+              <button type="button" data-value="radio">Radio</button>
+            </div>
+          </div>
+        </div>
+        <p class="field-hint">Radio plays the station selected in the Radio tab.</p>
+        <label class="field">
+          <span>Volume <span id="alarm-volume-value"></span></span>
+          <input id="alarm-volume" type="range" min="0" max="100" step="1" />
+        </label>
+        <p class="field-hint">Volume applies straight away, also to the radio.</p>
+        <div class="card-footer">
+          <button id="alarm-save" class="primary-button" disabled>Save alarm</button>
+        </div>
+        <div id="alarm-status" class="compose-status" aria-live="polite"></div>
+      </section>
+    </div>
+
+    <div class="tab-panel" role="tabpanel" id="panel-radio" aria-labelledby="tab-radio" data-panel="radio" hidden>
+      <section class="radio-panel card" id="radio-panel">
+        <h2>Radio Stations</h2>
+        <p class="radio-hint">Only MP3 streams play on the clock. Changes take effect after "Save list".</p>
+        <div id="radio-list" class="radio-list"></div>
+        <div class="radio-actions">
+          <button id="radio-save" class="primary-button" disabled>Save list</button>
+          <button id="radio-stop" class="secondary-button">Stop radio</button>
+          <button id="radio-reset" class="secondary-button">Restore defaults</button>
+        </div>
+        <div id="radio-status" class="compose-status" aria-live="polite"></div>
+
+        <h3>Find stations</h3>
+        <div class="radio-search-row">
+          <input id="radio-search-text" type="search" placeholder="Station name (optional)" />
+          <select id="radio-search-country">
+            <option value="">Any country</option>
+            <option value="NL">Netherlands</option>
+            <option value="BE">Belgium</option>
+            <option value="DE">Germany</option>
+            <option value="GB">United Kingdom</option>
+            <option value="US">United States</option>
+            <option value="FR">France</option>
+            <option value="ES">Spain</option>
+            <option value="IT">Italy</option>
+            <option value="AT">Austria</option>
+            <option value="CH">Switzerland</option>
+          </select>
+        </div>
+        <button id="radio-search" class="secondary-button">Search</button>
+        <p class="radio-hint" style="margin-top: 10px;">Pick a country without a name to see its most popular stations. Results come from radio-browser.info.</p>
+        <div id="radio-results" class="radio-results"></div>
+
+        <h3>Add a stream manually</h3>
+        <label class="field">
+          <span>Name</span>
+          <input id="radio-add-name" type="text" maxlength="39" placeholder="My station" />
+        </label>
+        <label class="field">
+          <span>Stream URL</span>
+          <input id="radio-add-url" type="url" maxlength="199" placeholder="http://example.com/stream.mp3" />
+        </label>
+        <button id="radio-add" class="secondary-button">Add to list</button>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    function formatAdminMessageTime(isoString) {
+      if (!isoString) return '';
+      var date = new Date(isoString);
+      if (Number.isNaN(date.getTime())) return '';
+      return date.toLocaleString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit'
+      });
+    }
+
+    async function loadTargets() {
+      var select = document.getElementById('msg-target');
+      if (!select) return;
+
+      try {
+        var response = await fetch('/api/message-targets', { cache: 'no-store' });
+        var data = await response.json();
+        var targets = Array.isArray(data.targets) ? data.targets : [{ id: 'all', label: 'All clocks' }];
+        var previousValue = select.value;
+        select.replaceChildren();
+
+        targets.forEach(function (target) {
+          var option = document.createElement('option');
+          option.value = target.id;
+          option.textContent = target.label;
+          select.appendChild(option);
+        });
+
+        if (previousValue && targets.some(function (target) { return target.id === previousValue; })) {
+          select.value = previousValue;
+        }
+      } catch (error) {
+        console.error('Failed to load message targets:', error);
+      }
+    }
+
+    function setComposeStatus(text, isError) {
+      var status = document.getElementById('compose-status');
+      if (!status) return;
+      status.textContent = text;
+      status.style.color = isError ? 'rgba(255, 164, 164, 0.96)' : 'rgba(232, 239, 251, 0.72)';
+    }
+
+    async function loadActiveMessages() {
+      var list = document.getElementById('active-messages');
+      if (!list) return;
+
+      try {
+        var response = await fetch('/api/messages?deviceId=all&includeDismissed=true', { cache: 'no-store' });
+        var data = await response.json();
+        var messages = Array.isArray(data.messages) ? data.messages : [];
+        list.replaceChildren();
+
+        if (messages.length === 0) {
+          var empty = document.createElement('div');
+          empty.className = 'admin-message-meta';
+          empty.textContent = 'No active messages.';
+          list.appendChild(empty);
+          return;
+        }
+
+        messages.forEach(function (message) {
+          var item = document.createElement('div');
+          item.className = 'admin-message';
+
+          var metaBits = [];
+          if (message.target === 'all') {
+            metaBits.push('All clocks');
+          } else {
+            metaBits.push(message.target);
+          }
+          if (message.sender) {
+            metaBits.push('from ' + message.sender);
+          }
+          if (message.createdAt) {
+            metaBits.push(formatAdminMessageTime(message.createdAt));
+          }
+
+          item.innerHTML =
+            '<div class="admin-message-text"></div>' +
+            '<div class="admin-message-meta"></div>' +
+            '<div class="admin-message-actions">' +
+            '<button type="button" data-id="' + String(message.id).replace(/"/g, '&quot;') + '">Deactivate</button>' +
+            '</div>';
+          item.querySelector('.admin-message-text').textContent = message.text;
+          item.querySelector('.admin-message-meta').textContent = metaBits.join(' · ');
+
+          list.appendChild(item);
+        });
+
+        list.querySelectorAll('button[data-id]').forEach(function (button) {
+          button.addEventListener('click', async function () {
+            try {
+              var response = await fetch('/api/messages/' + encodeURIComponent(button.dataset.id) + '/deactivate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({})
+              });
+              var data = await response.json();
+              if (!response.ok || data.error) {
+                setComposeStatus(data.error || 'Failed to deactivate message', true);
+                return;
+              }
+              await loadActiveMessages();
+            } catch (error) {
+              console.error('Failed to deactivate message:', error);
+              setComposeStatus('Failed to deactivate message', true);
+            }
+          });
+        });
+      } catch (error) {
+        console.error('Failed to load active messages:', error);
+        setComposeStatus('Failed to load active messages', true);
+      }
+    }
+
+    function setupMessageForm() {
+      var button = document.getElementById('send-message');
+      if (!button) return;
+
+      button.addEventListener('click', async function () {
+        var text = document.getElementById('msg-text');
+        var sender = document.getElementById('msg-sender');
+        var target = document.getElementById('msg-target');
+        var priority = document.getElementById('msg-priority');
+        var expires = document.getElementById('msg-expires');
+
+        var payload = {
+          text: (text && text.value) || '',
+          sender: (sender && sender.value) || '',
+          target: (target && target.value) || 'all',
+          priority: (priority && priority.value) || 'normal',
+          expiresAt: (expires && expires.value) ? new Date(expires.value).toISOString() : null
+        };
+
+        try {
+          var response = await fetch('/api/messages', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          var data = await response.json();
+          if (!response.ok || data.error) {
+            setComposeStatus(data.error || 'Failed to send message', true);
+            return;
+          }
+
+          if (text) text.value = '';
+          if (sender) sender.value = '';
+          if (expires) expires.value = '';
+          if (priority) priority.value = 'normal';
+
+          setComposeStatus('Message sent.');
+          await loadActiveMessages();
+        } catch (error) {
+          console.error('Failed to send message:', error);
+          setComposeStatus('Failed to send message', true);
+        }
+      });
+    }
+
+    /* --- Radio stations ------------------------------------------------- */
+    /* The list is edited locally and sent as a whole with "Save list". */
+    var RADIO_BROWSER_SERVERS = [
+      'https://de1.api.radio-browser.info',
+      'https://de2.api.radio-browser.info',
+      'https://fi1.api.radio-browser.info'
+    ];
+    var radio = {
+      saved: [],      // what the clock has
+      draft: [],      // what the page shows
+      selected: 0,
+      state: 'off',
+      max: 16,
+      nameMax: 39,
+      urlMax: 199
+    };
+
+    function radioDirty() {
+      return JSON.stringify(radio.saved) !== JSON.stringify(radio.draft);
+    }
+
+    function setRadioStatus(text, isError) {
+      var status = document.getElementById('radio-status');
+      if (!status) return;
+      status.textContent = text || '';
+      status.style.color = isError ? 'rgba(255, 164, 164, 0.96)' : 'rgba(232, 239, 251, 0.72)';
+    }
+
+    function radioStateLabel(state) {
+      return {
+        connecting: 'Connecting\u2026',
+        playing: 'Playing',
+        failed: 'Stream unavailable',
+        audio_failed: 'Audio unavailable'
+      }[state] || '';
+    }
+
+    function applyRadioResponse(data) {
+      radio.saved = (Array.isArray(data.stations) ? data.stations : []).map(function (s) {
+        return { name: s.name, url: s.url };
+      });
+      radio.selected = typeof data.selected === 'number' ? data.selected : 0;
+      radio.state = data.state || 'off';
+      if (data.max) radio.max = data.max;
+      if (data.nameMax) radio.nameMax = data.nameMax;
+      if (data.urlMax) radio.urlMax = data.urlMax;
+    }
+
+    async function radioRequest(path, body) {
+      var options = body === undefined
+        ? { cache: 'no-store' }
+        : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
+      var response = await fetch(path, options);
+      var data = await response.json();
+      if (!response.ok || data.error) throw new Error(data.error || ('HTTP ' + response.status));
+      return data;
+    }
+
+    function makeButton(label, title, onClick, disabled) {
+      var button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = label;
+      button.title = title;
+      button.setAttribute('aria-label', title);
+      button.disabled = !!disabled;
+      button.addEventListener('click', onClick);
+      return button;
+    }
+
+    function makeStationRow(station) {
+      var row = document.createElement('div');
+      row.className = 'radio-row';
+      var text = document.createElement('div');
+      text.style.minWidth = '0';
+      var name = document.createElement('div');
+      name.className = 'radio-row-name';
+      name.textContent = station.name;
+      var url = document.createElement('div');
+      url.className = 'radio-row-url';
+      url.textContent = station.url;
+      text.appendChild(name);
+      text.appendChild(url);
+      var actions = document.createElement('div');
+      actions.className = 'radio-row-actions';
+      row.appendChild(text);
+      row.appendChild(actions);
+      return { row: row, actions: actions };
+    }
+
+    function renderRadioList() {
+      var list = document.getElementById('radio-list');
+      if (!list) return;
+      list.replaceChildren();
+      var dirty = radioDirty();
+
+      if (radio.draft.length === 0) {
+        var empty = document.createElement('div');
+        empty.className = 'admin-message-meta';
+        empty.textContent = 'No stations yet. Search or add one below.';
+        list.appendChild(empty);
+      }
+
+      radio.draft.forEach(function (station, index) {
+        var parts = makeStationRow(station);
+        if (!dirty && index === radio.selected) {
+          parts.row.classList.add('is-selected');
+          var state = radioStateLabel(radio.state);
+          if (state) parts.row.querySelector('.radio-row-url').textContent = state + ' \u00b7 ' + station.url;
+        }
+        parts.actions.appendChild(makeButton('\u25b6', dirty ? 'Save the list first' : 'Play on the clock', function () {
+          playRadioStation(index);
+        }, dirty));
+        parts.actions.appendChild(makeButton('\u2191', 'Move up', function () {
+          var moved = radio.draft.splice(index, 1)[0];
+          radio.draft.splice(index - 1, 0, moved);
+          renderRadioList();
+        }, index === 0));
+        parts.actions.appendChild(makeButton('\u2193', 'Move down', function () {
+          var moved = radio.draft.splice(index, 1)[0];
+          radio.draft.splice(index + 1, 0, moved);
+          renderRadioList();
+        }, index === radio.draft.length - 1));
+        parts.actions.appendChild(makeButton('\u2715', 'Remove', function () {
+          radio.draft.splice(index, 1);
+          renderRadioList();
+        }));
+        list.appendChild(parts.row);
+      });
+
+      var save = document.getElementById('radio-save');
+      if (save) {
+        save.disabled = !dirty;
+        save.textContent = dirty ? 'Save list (' + radio.draft.length + '/' + radio.max + ')' : 'Saved';
+      }
+    }
+
+    function checkStreamUrl(url) {
+      if (!/^https?:\/\/\S+$/i.test(url)) return 'The URL must start with http:// or https:// and contain no spaces.';
+      if (/\.m3u8($|\?)/i.test(url)) return 'HLS streams (.m3u8) do not play on the clock.';
+      if (/\.(m3u|pls)($|\?)/i.test(url)) return 'This is a playlist file; use the stream URL inside it, or find the station via search.';
+      if (url.length > radio.urlMax) return 'The URL is longer than ' + radio.urlMax + ' characters.';
+      return '';
+    }
+
+    function addRadioStation(name, url) {
+      name = (name || '').trim().slice(0, radio.nameMax);
+      url = (url || '').trim();
+      if (!name) { setRadioStatus('Give the station a name.', true); return false; }
+      var problem = checkStreamUrl(url);
+      if (problem) { setRadioStatus(problem, true); return false; }
+      if (radio.draft.length >= radio.max) { setRadioStatus('The list is full (' + radio.max + ' stations).', true); return false; }
+      if (radio.draft.some(function (s) { return s.url === url; })) { setRadioStatus(name + ' is already in the list.', true); return false; }
+      radio.draft.push({ name: name, url: url });
+      setRadioStatus('Added ' + name + '. Don\u2019t forget to save.');
+      renderRadioList();
+      return true;
+    }
+
+    async function loadRadioStations(force) {
+      try {
+        var data = await radioRequest('/api/radio/stations');
+        var wasDirty = radioDirty();
+        applyRadioResponse(data);
+        if (force || !wasDirty) radio.draft = radio.saved.map(function (s) { return { name: s.name, url: s.url }; });
+        renderRadioList();
+      } catch (error) {
+        console.error('Failed to load radio stations:', error);
+        setRadioStatus('Could not load the station list.', true);
+      }
+    }
+
+    async function saveRadioStations() {
+      try {
+        var data = await radioRequest('/api/radio/stations', { stations: radio.draft });
+        applyRadioResponse(data);
+        radio.draft = radio.saved.map(function (s) { return { name: s.name, url: s.url }; });
+        setRadioStatus('Saved. The clock uses the new list now.');
+        renderRadioList();
+      } catch (error) {
+        setRadioStatus(error.message || 'Saving failed', true);
+      }
+    }
+
+    async function playRadioStation(index) {
+      try {
+        applyRadioResponse(await radioRequest('/api/radio/play', { index: index }));
+        setRadioStatus('');
+        renderRadioList();
+      } catch (error) {
+        setRadioStatus(error.message || 'Could not start the radio', true);
+      }
+    }
+
+    async function radioBrowserSearch(params) {
+      var query = new URLSearchParams(Object.assign({
+        codec: 'MP3',
+        hidebroken: 'true',
+        order: 'clickcount',
+        reverse: 'true',
+        limit: '30'
+      }, params)).toString();
+      var lastError = null;
+      for (var i = 0; i < RADIO_BROWSER_SERVERS.length; i++) {
+        var controller = new AbortController();
+        var timer = setTimeout(function () { controller.abort(); }, 6000);
+        try {
+          var response = await fetch(RADIO_BROWSER_SERVERS[i] + '/json/stations/search?' + query, { signal: controller.signal });
+          clearTimeout(timer);
+          if (!response.ok) throw new Error('HTTP ' + response.status);
+          return await response.json();
+        } catch (error) {
+          clearTimeout(timer);
+          lastError = error;
+        }
+      }
+      throw lastError || new Error('Search failed');
+    }
+
+    async function searchRadioStations() {
+      var text = document.getElementById('radio-search-text').value.trim();
+      var country = document.getElementById('radio-search-country').value;
+      var results = document.getElementById('radio-results');
+      if (!text && !country) { setRadioStatus('Enter a name or pick a country.', true); return; }
+
+      var params = {};
+      if (text) params.name = text;
+      if (country) params.countrycode = country;
+      results.replaceChildren();
+      setRadioStatus('Searching\u2026');
+
+      try {
+        var found = await radioBrowserSearch(params);
+        var seen = {};
+        var usable = found.filter(function (s) {
+          var url = (s.url_resolved || s.url || '').trim();   // url_resolved: playlist already unpacked
+          if (!url || seen[url] || String(s.codec).toUpperCase() !== 'MP3' || checkStreamUrl(url)) return false;
+          seen[url] = true;
+          s._stream = url;
+          return true;
+        });
+        setRadioStatus(usable.length ? '' : 'No MP3 stations found.');
+        usable.forEach(function (s) {
+          var name = (s.name || '').trim();
+          var parts = makeStationRow({ name: name, url: [s.countrycode, s.bitrate ? s.bitrate + ' kbps' : '', s.tags].filter(Boolean).join(' \u00b7 ') });
+          var add = makeButton('Add', 'Add to list', function () {
+            if (addRadioStation(name, s._stream)) add.disabled = true;
+          }, radio.draft.some(function (d) { return d.url === s._stream; }));
+          add.style.minWidth = '64px';
+          parts.actions.appendChild(add);
+          results.appendChild(parts.row);
+        });
+      } catch (error) {
+        console.error('Radio Browser search failed:', error);
+        setRadioStatus('Search is unavailable right now. You can still add a stream URL manually.', true);
+      }
+    }
+
+    function setupRadioPanel() {
+      document.getElementById('radio-save').addEventListener('click', saveRadioStations);
+      document.getElementById('radio-stop').addEventListener('click', async function () {
+        try {
+          applyRadioResponse(await radioRequest('/api/radio/play', { stop: true }));
+          renderRadioList();
+        } catch (error) {
+          setRadioStatus(error.message || 'Could not stop the radio', true);
+        }
+      });
+      document.getElementById('radio-reset').addEventListener('click', async function () {
+        if (!confirm('Replace the list with the built-in default stations?')) return;
+        try {
+          applyRadioResponse(await radioRequest('/api/radio/stations/reset', {}));
+          radio.draft = radio.saved.map(function (s) { return { name: s.name, url: s.url }; });
+          setRadioStatus('Default stations restored.');
+          renderRadioList();
+        } catch (error) {
+          setRadioStatus(error.message || 'Reset failed', true);
+        }
+      });
+      document.getElementById('radio-search').addEventListener('click', searchRadioStations);
+      document.getElementById('radio-search-text').addEventListener('keydown', function (event) {
+        if (event.key === 'Enter') searchRadioStations();
+      });
+      document.getElementById('radio-add').addEventListener('click', function () {
+        var name = document.getElementById('radio-add-name');
+        var url = document.getElementById('radio-add-url');
+        if (addRadioStation(name.value, url.value)) { name.value = ''; url.value = ''; }
+      });
+      window.addEventListener('beforeunload', function (event) {
+        if (radioDirty() || Object.keys(changedSettings()).length) { event.preventDefault(); event.returnValue = ''; }
+      });
+    }
+
+    /* --- Tabs ------------------------------------------------------------ */
+    /* The tab lives in the URL hash (#settings, #radio), so a bookmark or a
+       reload opens the same tab. Each tab only polls the clock while visible. */
+    var TABS = ['messages', 'settings', 'radio'];
+    var activeTab = 'messages';
+    var onTabShown = {};
+
+    function tabFromHash() {
+      var name = (location.hash || '').replace('#', '');
+      return TABS.indexOf(name) >= 0 ? name : 'messages';
+    }
+
+    function showTab(name) {
+      activeTab = name;
+      document.querySelectorAll('.tabs [data-tab]').forEach(function (button) {
+        button.setAttribute('aria-selected', button.dataset.tab === name ? 'true' : 'false');
+        button.tabIndex = button.dataset.tab === name ? 0 : -1;
+      });
+      document.querySelectorAll('[data-panel]').forEach(function (panel) {
+        panel.hidden = panel.dataset.panel !== name;
+      });
+      if (onTabShown[name]) onTabShown[name]();
+    }
+
+    function setupTabs() {
+      var buttons = Array.prototype.slice.call(document.querySelectorAll('.tabs [data-tab]'));
+      buttons.forEach(function (button, index) {
+        button.addEventListener('click', function () {
+          if (location.hash !== '#' + button.dataset.tab) {
+            history.replaceState(null, '', button.dataset.tab === 'messages' ? location.pathname : '#' + button.dataset.tab);
+          }
+          showTab(button.dataset.tab);
+        });
+        button.addEventListener('keydown', function (event) {
+          var step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+          if (!step) return;
+          var next = buttons[(index + step + buttons.length) % buttons.length];
+          next.focus();
+          next.click();
+        });
+      });
+      window.addEventListener('hashchange', function () { showTab(tabFromHash()); });
+    }
+
+    function everyWhileVisible(tab, fn, ms) {
+      setInterval(function () {
+        if (activeTab === tab && !document.hidden) fn();
+      }, ms);
+    }
+
+    function setStatus(id, text, isError) {
+      var status = document.getElementById(id);
+      if (!status) return;
+      status.textContent = text || '';
+      status.style.color = isError ? 'rgba(255, 164, 164, 0.96)' : 'rgba(232, 239, 251, 0.72)';
+    }
+
+    async function apiRequest(path, body) {
+      var options = body === undefined
+        ? { cache: 'no-store' }
+        : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
+      var response = await fetch(path, options);
+      var data = await response.json();
+      if (!response.ok || data.error) throw new Error(data.error || ('HTTP ' + response.status));
+      return data;
+    }
+
+    /* --- Segmented controls -------------------------------------------- */
+    function segmentedValue(group) {
+      var pressed = group.querySelector('button[aria-pressed="true"]');
+      return pressed ? pressed.dataset.value : '';
+    }
+
+    function setSegmentedValue(group, value) {
+      group.querySelectorAll('button').forEach(function (button) {
+        button.setAttribute('aria-pressed', button.dataset.value === String(value) ? 'true' : 'false');
+      });
+    }
+
+    function setupSegmented(group, onChange) {
+      group.querySelectorAll('button').forEach(function (button) {
+        button.addEventListener('click', function () {
+          setSegmentedValue(group, button.dataset.value);
+          onChange();
+        });
+      });
+    }
+
+    /* --- Settings -------------------------------------------------------- */
+    /* The form is compared with what the clock has; only changed fields are
+       sent. Saving restarts the clock (same as the settings screen). */
+    var settings = { saved: null, restarting: false };
+
+    function settingGroup(name) {
+      return document.querySelector('.segmented[data-setting="' + name + '"]');
+    }
+
+    function readSettingsForm() {
+      return {
+        roomName: document.getElementById('set-room-name').value.trim(),
+        clockFace: segmentedValue(settingGroup('clockFace')),
+        timeFormat: segmentedValue(settingGroup('timeFormat')),
+        leadingZero: document.getElementById('set-leading-zero').checked,
+        language: segmentedValue(settingGroup('language')),
+        location: document.getElementById('set-location').value.trim(),
+        units: segmentedValue(settingGroup('units')),
+        nightShift: document.getElementById('set-night-shift').checked,
+        nightShiftStart: document.getElementById('set-night-start').value,
+        nightShiftEnd: document.getElementById('set-night-end').value,
+        messageSharing: segmentedValue(settingGroup('messageSharing')),
+        deviceId: document.getElementById('set-device-id').value.trim()
+      };
+    }
+
+    function fillSettingsForm(data) {
+      document.getElementById('set-room-name').value = data.roomName || '';
+      setSegmentedValue(settingGroup('clockFace'), data.clockFace);
+      setSegmentedValue(settingGroup('timeFormat'), data.timeFormat);
+      document.getElementById('set-leading-zero').checked = !!data.leadingZero;
+      setSegmentedValue(settingGroup('language'), data.language);
+      document.getElementById('set-location').value = data.location || '';
+      setSegmentedValue(settingGroup('units'), data.units);
+      document.getElementById('set-night-shift').checked = !!data.nightShift;
+      document.getElementById('set-night-start').value = data.nightShiftStart || '22:00';
+      document.getElementById('set-night-end').value = data.nightShiftEnd || '06:00';
+      setSegmentedValue(settingGroup('messageSharing'), data.messageSharing);
+      document.getElementById('set-device-id').value = data.deviceId || '';
+      document.getElementById('set-wifi-ssid').textContent = data.wifiSsid || 'Not set up';
+
+      var info = document.getElementById('set-location-info');
+      info.textContent = data.locationReady
+        ? 'Timezone ' + data.timezone + ' · ' + data.latitude + ', ' + data.longitude
+        : 'No location set yet.';
+
+      document.getElementById('page-title').textContent = data.roomName || 'Clock';
+      document.title = (data.roomName || 'Clock') + ' · Clock';
+    }
+
+    function changedSettings() {
+      if (!settings.saved) return {};
+      var form = readSettingsForm();
+      var saved = settings.saved;
+      var changes = {};
+      Object.keys(form).forEach(function (key) {
+        if (form[key] !== saved[key]) changes[key] = form[key];
+      });
+      return changes;
+    }
+
+    function refreshSettingsForm() {
+      var form = readSettingsForm();
+      document.getElementById('set-leading-zero-row').hidden = form.timeFormat !== '12';
+      document.getElementById('set-night-times').style.opacity = form.nightShift ? '1' : '0.45';
+      var dirty = Object.keys(changedSettings()).length > 0;
+      document.getElementById('settings-save').disabled = !dirty || settings.restarting;
+      document.getElementById('settings-revert').disabled = !dirty || settings.restarting;
+    }
+
+    async function loadSettings() {
+      try {
+        var data = await apiRequest('/api/settings');
+        settings.saved = data;
+        fillSettingsForm(data);
+        refreshSettingsForm();
+      } catch (error) {
+        console.error('Failed to load settings:', error);
+        setStatus('settings-status', 'Could not load the settings.', true);
+      }
+    }
+
+    function sleep(ms) {
+      return new Promise(function (resolve) { setTimeout(resolve, ms); });
+    }
+
+    // After a save the clock restarts; wait until it answers again.
+    async function waitForRestart() {
+      await sleep(5000);
+      for (var attempt = 0; attempt < 45; attempt++) {
+        try {
+          var data = await apiRequest('/api/settings');
+          if (!data.restartPending) return data;
+        } catch (error) {
+          /* still restarting */
+        }
+        await sleep(2000);
+      }
+      return null;
+    }
+
+    async function saveSettings() {
+      var changes = changedSettings();
+      if (!Object.keys(changes).length) return;
+      if (changes.deviceId !== undefined && !/^[A-Za-z0-9._-]+$/.test(changes.deviceId)) {
+        setStatus('settings-status', 'Device ID: use letters, digits, - _ and . only.', true);
+        return;
+      }
+      if (!confirm('Save these settings? The clock restarts to apply them (about 20 seconds).')) return;
+
+      settings.restarting = true;
+      refreshSettingsForm();
+      setStatus('settings-status', changes.location !== undefined ? 'Looking up the location…' : 'Saving…');
+      try {
+        await apiRequest('/api/settings', changes);
+      } catch (error) {
+        settings.restarting = false;
+        refreshSettingsForm();
+        setStatus('settings-status', error.message || 'Saving failed', true);
+        return;
+      }
+
+      setStatus('settings-status', 'Saved. The clock is restarting…');
+      var data = await waitForRestart();
+      settings.restarting = false;
+      if (data) {
+        settings.saved = data;
+        fillSettingsForm(data);
+        setStatus('settings-status', 'Saved and applied.');
+      } else {
+        setStatus('settings-status', 'The clock has not come back yet. Reload this page in a moment.', true);
+      }
+      refreshSettingsForm();
+    }
+
+    function setupSettingsPanel() {
+      document.querySelectorAll('.segmented[data-setting]').forEach(function (group) {
+        setupSegmented(group, refreshSettingsForm);
+      });
+      document.querySelectorAll('#settings-panel input').forEach(function (input) {
+        input.addEventListener('input', refreshSettingsForm);
+        input.addEventListener('change', refreshSettingsForm);
+      });
+      document.getElementById('settings-save').addEventListener('click', saveSettings);
+      document.getElementById('settings-revert').addEventListener('click', function () {
+        if (settings.saved) fillSettingsForm(settings.saved);
+        setStatus('settings-status', '');
+        refreshSettingsForm();
+      });
+    }
+
+    /* --- Alarm ----------------------------------------------------------- */
+    /* Applies immediately on the clock, no restart. */
+    var alarm = { saved: null };
+
+    function pad2(n) {
+      return (n < 10 ? '0' : '') + n;
+    }
+
+    function readAlarmForm() {
+      var time = document.getElementById('alarm-time').value || '07:00';
+      return {
+        enabled: document.getElementById('alarm-enabled').checked,
+        hour: parseInt(time.slice(0, 2), 10),
+        minute: parseInt(time.slice(3, 5), 10),
+        type: segmentedValue(document.querySelector('.segmented[data-alarm="type"]'))
+      };
+    }
+
+    function fillAlarmForm(data) {
+      document.getElementById('alarm-enabled').checked = !!data.enabled;
+      document.getElementById('alarm-time').value = pad2(data.hour) + ':' + pad2(data.minute);
+      setSegmentedValue(document.querySelector('.segmented[data-alarm="type"]'), data.type);
+      var volume = document.getElementById('alarm-volume');
+      if (document.activeElement !== volume) volume.value = data.volume;
+      document.getElementById('alarm-volume-value').textContent = '(' + volume.value + '%)';
+    }
+
+    function alarmDirty() {
+      if (!alarm.saved) return false;
+      var form = readAlarmForm();
+      return form.enabled !== alarm.saved.enabled || form.hour !== alarm.saved.hour
+        || form.minute !== alarm.saved.minute || form.type !== alarm.saved.type;
+    }
+
+    function refreshAlarmForm() {
+      document.getElementById('alarm-save').disabled = !alarmDirty();
+    }
+
+    async function loadAlarm() {
+      try {
+        var data = await apiRequest('/api/alarm');
+        var dirty = alarmDirty();
+        alarm.saved = data;
+        if (!dirty) fillAlarmForm(data);
+        if (data.ringing) setStatus('alarm-status', 'The alarm is ringing right now.');
+        refreshAlarmForm();
+      } catch (error) {
+        console.error('Failed to load alarm:', error);
+        setStatus('alarm-status', 'Could not load the alarm.', true);
+      }
+    }
+
+    async function saveAlarm() {
+      try {
+        var data = await apiRequest('/api/alarm', readAlarmForm());
+        alarm.saved = data;
+        fillAlarmForm(data);
+        setStatus('alarm-status', data.enabled
+          ? 'Alarm set for ' + pad2(data.hour) + ':' + pad2(data.minute) + '.'
+          : 'Alarm is off.');
+      } catch (error) {
+        setStatus('alarm-status', error.message || 'Saving failed', true);
+      }
+      refreshAlarmForm();
+    }
+
+    function setupAlarmPanel() {
+      setupSegmented(document.querySelector('.segmented[data-alarm="type"]'), refreshAlarmForm);
+      ['alarm-enabled', 'alarm-time'].forEach(function (id) {
+        var input = document.getElementById(id);
+        input.addEventListener('input', refreshAlarmForm);
+        input.addEventListener('change', refreshAlarmForm);
+      });
+      var volume = document.getElementById('alarm-volume');
+      volume.addEventListener('input', function () {
+        document.getElementById('alarm-volume-value').textContent = '(' + volume.value + '%)';
+      });
+      volume.addEventListener('change', async function () {   // on release
+        try {
+          var data = await apiRequest('/api/alarm', { volume: parseInt(volume.value, 10) });
+          if (alarm.saved) alarm.saved.volume = data.volume;
+        } catch (error) {
+          setStatus('alarm-status', error.message || 'Could not set the volume', true);
+        }
+      });
+      document.getElementById('alarm-save').addEventListener('click', saveAlarm);
+    }
+
+    /* --- Start ----------------------------------------------------------- */
+    async function initializePage() {
+      setupTabs();
+      setupMessageForm();
+      setupSettingsPanel();
+      setupAlarmPanel();
+      setupRadioPanel();
+
+      onTabShown.messages = function () { loadTargets(); loadActiveMessages(); };
+      onTabShown.settings = function () {
+        if (!settings.restarting && !Object.keys(changedSettings()).length) loadSettings();
+        loadAlarm();
+      };
+      onTabShown.radio = function () { loadRadioStations(false); };
+
+      // Settings also give the page its title (the room name).
+      await loadSettings();
+      showTab(tabFromHash());
+
+      // Targets and messages can change from other devices (hub election
+      // settling, another clock sending a message); the radio play state
+      // changes on the clock itself. An unsaved radio draft is left alone.
+      everyWhileVisible('messages', loadTargets, 5000);
+      everyWhileVisible('messages', loadActiveMessages, 5000);
+      everyWhileVisible('settings', loadAlarm, 10000);
+      everyWhileVisible('radio', function () { loadRadioStations(false); }, 5000);
+    }
+
+    initializePage();
+  </script>
+</body>
+</html>

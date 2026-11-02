@@ -30,6 +30,7 @@
 #include "message_service.h"
 #include "radio_stations.h"
 #include "radio_web.h"
+#include "settings_web.h"
 #include "weather_client.h"
 
 static const char *TAG = "rwd_esp32_p4";
@@ -438,6 +439,9 @@ void app_main(void)
   ESP_ERROR_CHECK(audio_alarm_init());
   if (radio_web_register(message_service_http_server()) != ESP_OK) {
     ESP_LOGW(TAG, "Radio web API unavailable");   /* not fatal: the clock and radio still work */
+  }
+  if (settings_web_register(message_service_http_server(), &s_device_config) != ESP_OK) {
+    ESP_LOGW(TAG, "Settings web API unavailable");
   }
   heap_diag("after audio_alarm_init");
 

@@ -78,8 +78,12 @@ Sources:
   On-device Open-Meteo geocoding for the setup UI
 - `main/message_service.*`
   House messaging JSON API, UDP hub discovery/election, and the served composer page
-- `main/web/messages.html`
-  The composer page served by `message_service.c`, embedded into the firmware image
+- `main/web/index.html`
+  The clock's web page (tabs: Messages, Settings, Radio), served by `message_service.c` and embedded into the firmware image
+- `main/settings_web.*`
+  Settings and alarm API for the Settings tab (`/api/settings`, `/api/alarm`)
+- `main/radio_web.*`, `main/radio_stations.*`
+  Radio API for the Radio tab (`/api/radio/...`) and the user-editable station list in NVS
 - `main/weather_client.*`
   Open-Meteo forecast fetch
 - `main/bsp_shims.h`

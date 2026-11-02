@@ -4811,6 +4811,13 @@ esp_err_t app_ui_update_runtime(
     refresh_radio_view();   /* connecting -> playing / failed, driven by the audio task */
   }
 
+  /* The volume can also change from the web page; follow it unless a finger
+   * is on the arc right now. */
+  if (s_ui.volume_arc != NULL && !lv_obj_has_state(s_ui.volume_arc, LV_STATE_PRESSED)
+      && lv_arc_get_value(s_ui.volume_arc) != (int32_t) audio_alarm_get_volume()) {
+    lv_arc_set_value(s_ui.volume_arc, audio_alarm_get_volume());
+  }
+
   bool weather_changed = false;
   if (runtime->weather.valid) {
     weather_changed = !s_ui.weather.valid

@@ -1982,16 +1982,17 @@ static esp_err_t messages_sync_handler(httpd_req_t *req)
   return send_json_response(req, 200, json);
 }
 
-extern const uint8_t messages_html_start[] asm("_binary_messages_html_start");
-extern const uint8_t messages_html_end[] asm("_binary_messages_html_end");
+/* The clock's whole web page (tabs: Messages, Settings, Radio). */
+extern const uint8_t index_html_start[] asm("_binary_index_html_start");
+extern const uint8_t index_html_end[] asm("_binary_index_html_end");
 
-static esp_err_t messages_page_handler(httpd_req_t *req)
+static esp_err_t web_page_handler(httpd_req_t *req)
 {
   httpd_resp_set_type(req, "text/html");
   return httpd_resp_send(
     req,
-    (const char *) messages_html_start,
-    (ssize_t) (messages_html_end - messages_html_start)
+    (const char *) index_html_start,
+    (ssize_t) (index_html_end - index_html_start)
   );
 }
 
@@ -2012,9 +2013,9 @@ static esp_err_t start_http_server(void)
   config.stack_size = 12288;
   config.server_port = MESSAGE_SERVICE_PORT;
   config.uri_match_fn = httpd_uri_match_wildcard;
-  /* Default is 8 and the message API alone uses all 8; radio_web.c adds its
-   * own handlers on this same server. */
-  config.max_uri_handlers = 16;
+  /* Default is 8 and the message API alone uses all 8; radio_web.c and
+   * settings_web.c add their own handlers on this same server (16 in use). */
+  config.max_uri_handlers = 24;
 
   esp_err_t err = httpd_start(&s_http_server, &config);
   if (err != ESP_OK) {
@@ -2061,13 +2062,13 @@ static esp_err_t start_http_server(void)
   const httpd_uri_t page_root_uri = {
     .uri = "/",
     .method = HTTP_GET,
-    .handler = messages_page_handler,
+    .handler = web_page_handler,
     .user_ctx = NULL
   };
   const httpd_uri_t page_messages_uri = {
     .uri = "/messages",
     .method = HTTP_GET,
-    .handler = messages_page_handler,
+    .handler = web_page_handler,
     .user_ctx = NULL
   };
 
