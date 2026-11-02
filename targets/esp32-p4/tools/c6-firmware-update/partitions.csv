@@ -1,0 +1,11 @@
+# Partition table for the C6 firmware update tool.
+#
+# nvs and phy_init sit at exactly the same offsets and sizes as in the clock's
+# own partitions.csv, so flashing this tool leaves the clock's settings (Wi-Fi,
+# location, radio stations, alarm) untouched. There is deliberately no otadata
+# partition: in the clock's layout 0xd000 is still inside nvs.
+# Name,   Type, SubType,  Offset,   Size,     Flags
+nvs,      data, nvs,      0x9000,   0x6000,
+phy_init, data, phy,      0xf000,   0x1000,
+factory,  app,  factory,  0x10000,  2M,
+storage,  data, littlefs, 0x210000, 0x1E0000,

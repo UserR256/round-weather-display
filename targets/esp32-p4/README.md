@@ -80,6 +80,8 @@ Sources:
   House messaging JSON API, UDP hub discovery/election, and the served composer page
 - `main/web/index.html`
   The clock's web page (tabs: Messages, Settings, Radio), served by `message_service.c` and embedded into the firmware image
+- `tools/c6-firmware-update/`
+  One-off tool that updates the ESP-Hosted firmware on the board's ESP32-C6 Wi-Fi chip over SDIO (fixes the `Co-proc [0.0.0]` version warning); see its README
 - `main/settings_web.*`
   Settings and alarm API for the Settings tab (`/api/settings`, `/api/alarm`)
 - `main/radio_web.*`, `main/radio_stations.*`

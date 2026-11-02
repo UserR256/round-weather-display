@@ -7,8 +7,10 @@ dependencies:
     version: ">=0.10,<2.0"
     rules:
       - if: "target == esp32p4"
+  # Keep in step with the firmware on the ESP32-C6 (tools/c6-firmware-update):
+  # host and co-processor should run the same esp_hosted major.minor.
   espressif/esp_hosted:
-    version: "~2"
+    version: "~2.13.1"
     rules:
       - if: "target == esp32p4"
   espressif/esp_codec_dev:
