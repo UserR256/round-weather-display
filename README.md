@@ -68,6 +68,8 @@ If you're printing a case, the files are here:
 - [Classic case STEP files — available in my store](https://shop.anoraker.com/products/round-weather-clock-classic-case-step-files)
 - [Magnets for Classic Case](https://amzn.to/4yCba1Q)
 
+For the ESP32-P4 with a speaker there are two parametric OpenSCAD designs in [`hardware/`](hardware/) (a standing round case with the speaker in the back cover, and a tilted clock on a speaker base). Their display and speaker dimensions still need checking against your parts; see the LEESMIJ in each folder.
+
 ## 🚀 Quick Start
 
 ### Raspberry Pi

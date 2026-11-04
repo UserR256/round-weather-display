@@ -19,6 +19,8 @@ This target includes:
 - Alarm (beep or internet radio) and an internet radio screen with a volume arc; MP3 streams only (minimp3)
 - A user-editable radio station list (max 16, stored in NVS), searchable via radio-browser.info on the web page
 - English and Dutch UI (`main/i18n*.{c,h,inc}`)
+- Finding the web page: the clock's host name comes from its room name (`weerklok-<room>`, or `weerklok` for the default name); it is the DHCP host name and is announced over mDNS, so the page opens at `http://weerklok-<room>.local/`. **Settings → Web Page** on the clock shows a QR code with the IP address (`main/device_discovery.*`, `main/app_ui_device.*`)
+- Factory reset: **Settings → Factory Reset** (with confirmation), or hold the BOOT button (GPIO35) for 10 s while the clock runs; erases NVS and restarts into setup
 - NVS-backed device config with boot-count persistence
 - A `scripts/setup.sh` one-command install/update flow (see below)
 
