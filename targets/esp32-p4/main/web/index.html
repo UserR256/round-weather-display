@@ -604,7 +604,11 @@
           <span>Network</span>
           <div class="readonly-value" id="set-wifi-ssid">&ndash;</div>
         </div>
-        <p class="field-hint">Change the Wi-Fi network on the clock itself, so you can't lock yourself out of this page.</p>
+        <div class="setting-row">
+        <span>Address of this page</span>
+        <div class="readonly-value" id="set-local-url">&ndash;</div>
+      </div>
+      <p class="field-hint">Change the Wi-Fi network on the clock itself, so you can't lock yourself out of this page. A factory reset is under Settings on the clock.</p>
 
         <div class="card-footer">
           <button id="settings-save" class="primary-button" disabled>Save &amp; restart</button>
@@ -1276,6 +1280,7 @@
       setSegmentedValue(settingGroup('messageSharing'), data.messageSharing);
       document.getElementById('set-device-id').value = data.deviceId || '';
       document.getElementById('set-wifi-ssid').textContent = data.wifiSsid || 'Not set up';
+      document.getElementById('set-local-url').textContent = data.localUrl || '\u2013';
 
       var info = document.getElementById('set-location-info');
       info.textContent = data.locationReady

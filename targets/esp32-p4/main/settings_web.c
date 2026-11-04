@@ -14,6 +14,7 @@
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "location_lookup.h"
+#include "device_discovery.h"
 
 static const char *TAG = "settings_web";
 
@@ -153,6 +154,9 @@ static cJSON *settings_to_json(const device_config_t *c) {
   cJSON_AddStringToObject(json, "latitude", c->latitude);
   cJSON_AddStringToObject(json, "longitude", c->longitude);
   cJSON_AddStringToObject(json, "wifiSsid", c->wifi_ssid);   // never the password
+  char url[64];
+  discovery_local_url(url, sizeof(url));
+  cJSON_AddStringToObject(json, "localUrl", url);
   cJSON_AddBoolToObject(json, "restartPending", s_restart_pending);
   return json;
 }

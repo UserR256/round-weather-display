@@ -13,10 +13,12 @@ idf_component_register(
     "app_parity_lab.c"
     "app_ui.c"
     "app_ui_alarm.c"
+    "app_ui_device.c"
     "audio_beep.c"
     "audio_alarm.c"
     "connectivity.c"
     "device_config.c"
+    "device_discovery.c"
     "i18n.c"
     "forecast_representative.c"
     "location_lookup.c"
@@ -36,6 +38,7 @@ idf_component_register(
   REQUIRES
     nvs_flash
     esp_event
+    esp_driver_gpio
     esp_http_client
     esp_http_server
     esp_netif

@@ -30,6 +30,7 @@
 #include "message_service.h"
 #include "radio_stations.h"
 #include "radio_web.h"
+#include "device_discovery.h"
 #include "settings_web.h"
 #include "weather_client.h"
 
@@ -229,6 +230,8 @@ static void ui_heartbeat_task(void *arg)
     }
 
     audio_alarm_check();
+    /* Holding BOOT for 10 s erases all settings (also when the screen is unusable). */
+    (void) device_reset_button_poll();
 
     static const char *const radio_names[] = { "off", "connecting", "playing", "failed", "audio_failed" };
     const radio_state_t radio_state = audio_radio_get_state();
@@ -328,6 +331,7 @@ static void weather_service_task(void *arg)
 
       ESP_LOGI(TAG, "Wi-Fi association completed");
       heap_diag("after Wi-Fi up");
+      discovery_start_mdns(&s_device_config);   /* http://weerklok-<room>.local/ */
       time_synced = connectivity_is_time_valid();
     }
 

@@ -1,4 +1,5 @@
 #include "connectivity.h"
+#include "device_discovery.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -194,6 +195,8 @@ esp_err_t connectivity_init(const device_config_t *config)
 
   ESP_RETURN_ON_ERROR(connectivity_prepare_stack(), TAG, "Failed to prepare Wi-Fi stack");
   ESP_RETURN_ON_ERROR(connectivity_register_handlers(), TAG, "Failed to register Wi-Fi event handlers");
+  /* Before DHCP runs, so the router lists the clock by its room name. */
+  discovery_set_dhcp_hostname(s_wifi_netif, config);
 
   wifi_config_t wifi_config = {0};
   memcpy(wifi_config.sta.ssid, config->wifi_ssid, strlen(config->wifi_ssid));

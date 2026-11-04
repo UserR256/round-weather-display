@@ -67,6 +67,8 @@ CONFIG_LV_FONT_MONTSERRAT_18=y
 CONFIG_LV_FONT_MONTSERRAT_24=y
 CONFIG_LV_FONT_MONTSERRAT_32=y
 CONFIG_LV_FONT_MONTSERRAT_48=y
+# QR code with the web page address (Settings > Web Page)
+CONFIG_LV_USE_QRCODE=y
 # TLS while the radio plays. The I2S DMA buffers take ~16 KB of DMA-capable
 # internal RAM; the hardware AES engine then cannot get its own DMA bounce
 # buffer ("esp-aes: Failed to allocate memory for start alignment buffer",

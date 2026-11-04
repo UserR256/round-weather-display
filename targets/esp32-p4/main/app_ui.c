@@ -48,6 +48,7 @@
 #include "message_service.h"
 #include "weather_icon_names.h"
 #include "app_ui_alarm.h"
+#include "app_ui_device.h"
 #include "i18n.h"
 #include "audio_alarm.h"
 
@@ -4144,6 +4145,28 @@ static void build_setup_overlay(lv_obj_t *parent)
   lv_obj_set_width(alarm_btn, LV_PCT(100));
   lv_obj_add_event_cb(alarm_btn, (lv_event_cb_t)show_alarm_panel, LV_EVENT_CLICKED, NULL);
   create_alarm_panel(s_ui.setup_overlay);
+
+  /* QR code + address of the web page, and the factory reset */
+  lv_obj_t *web_btn = create_setup_button(
+    s_ui.setup_location_panel,
+    tr("Web Page"),
+    lv_color_hex(0x17263b),
+    color_panel_border(),
+    NULL
+  );
+  lv_obj_set_width(web_btn, LV_PCT(100));
+  lv_obj_add_event_cb(web_btn, (lv_event_cb_t)show_web_page_panel, LV_EVENT_CLICKED, NULL);
+
+  lv_obj_t *reset_btn = create_setup_button(
+    s_ui.setup_location_panel,
+    tr("Factory Reset"),
+    lv_color_hex(0x3b1717),
+    lv_color_hex(0xc62828),
+    NULL
+  );
+  lv_obj_set_width(reset_btn, LV_PCT(100));
+  lv_obj_add_event_cb(reset_btn, (lv_event_cb_t)show_factory_reset_panel, LV_EVENT_CLICKED, NULL);
+  create_device_panels(s_ui.setup_overlay);
 
   lv_obj_t *location_button_row = lv_obj_create(s_ui.setup_location_panel);
   lv_obj_set_width(location_button_row, LV_PCT(100));
