@@ -14,13 +14,42 @@ This target includes:
 - Analog, digital, forecast, and message screens with Pi-matched layout/behavior
 - Live weather fetch (Open-Meteo) with icon/condition mapping
 - On-device WiFi provisioning (network scan + on-screen keyboard) and location setup/geocoding, driven by a touch UI
-- House messaging: the full JSON API (`/api/messages`, `/api/message-targets`, `/api/message-runtime`, ack/deactivate/sync) plus UDP hub discovery/election for shared mode across multiple clocks, and a served composer webpage at `http://<device-ip>/` (or `/messages`) so you can send a message from any browser on the LAN, the same way you would from the Pi's `/messages` page
+- House messaging: the full JSON API (`/api/messages`, `/api/message-targets`, `/api/message-runtime`, ack/deactivate/sync) plus UDP hub discovery/election for shared mode across multiple clocks
+- A web page at `http://<device-ip>/` (or `/messages`) with three tabs: **Messages** (the composer, same as the Pi's `/messages` page), **Settings** (the settings screen plus alarm and volume, via `/api/settings` and `/api/alarm`), and **Radio** (station list, via `/api/radio/...`)
+- Alarm (beep or internet radio) and an internet radio screen with a volume arc; MP3 streams only (minimp3)
+- A user-editable radio station list (max 16, stored in NVS), searchable via radio-browser.info on the web page
+- English and Dutch UI (`main/i18n*.{c,h,inc}`)
 - NVS-backed device config with boot-count persistence
 - A `scripts/setup.sh` one-command install/update flow (see below)
 
-Known gap:
+Known gaps:
 
 - No wireless OTA firmware updates yet -- updating means re-running `scripts/setup.sh` with the board plugged in over USB
+- The prebuilt firmware in `docs/firmware/` (browser installer) is still a chip revision v1.x build and won't install on v3.x boards
+- The web page is English only, also when the clock is set to Dutch
+
+## Chip revision (v1.x vs v3.x)
+
+Current Waveshare boards ship with an ESP32-P4 **v3.x** chip (the boot log says `chip revision: v3.2`). `sdkconfig.defaults` targets v3.x, which needs ESP-IDF v5.5.3 or newer. One firmware image can't support both v1.x and v3.x. For an old v1.x board, set these in your local `sdkconfig` (or via `idf.py menuconfig` → Component config → Hardware Settings → Chip revision):
+
+```
+CONFIG_ESP32P4_SELECTS_REV_LESS_V3=y
+CONFIG_ESP32P4_REV_MIN_100=y
+```
+
+A v1.x build on a v3.x chip fails to flash with `requires chip revision in range [v1.0 - v1.99]`.
+
+`sdkconfig.defaults` only applies when there is no `sdkconfig` yet. After changing it, delete `build/` and `sdkconfig` and run `idf.py set-target esp32p4` (the target is pinned in the defaults, so a fresh build doesn't fall back to plain `esp32`).
+
+## Wi-Fi co-processor (ESP32-C6) firmware
+
+Wi-Fi runs on the board's ESP32-C6 via ESP-Hosted. Boards ship with old factory firmware on the C6, which shows at boot as:
+
+```
+W transport: Version mismatch: Host [2.13.0] > Co-proc [0.0.0] ==> Upgrade co-proc to avoid RPC timeouts
+```
+
+`tools/c6-firmware-update/` updates the C6 over SDIO from the P4 (no extra wiring) and keeps the clock's settings. See its README. Host and C6 should run the same esp_hosted major.minor, so `main/idf_component.yml` pins esp_hosted to `~2.13.1`; bump both together.
 
 ## Setup / Update
 
@@ -92,6 +121,16 @@ Sources:
   Small forward declarations for BSP backlight helpers documented upstream
 - `scripts/`
   Shell helpers: `setup.sh` (install/update/build/flash), plus `activate-idf.sh`, `set-target.sh`, `build.sh`, `flash.sh`, `monitor.sh` for manual use
+
+## Memory notes
+
+Internal, DMA-capable RAM is the tight resource, not PSRAM. While the radio plays, the I2S DMA buffers take ~16 KB of it, and the hardware AES engine then couldn't get its DMA bounce buffer, so every HTTPS request failed. `sdkconfig.defaults` therefore uses software AES (`CONFIG_MBEDTLS_HARDWARE_AES=n`) and puts mbedTLS buffers in PSRAM (`CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y`). The log prints the low-water mark once a minute:
+
+```
+heap: periodic up 600s radio=playing | internal free … (min …) | DMA free … (min …, largest …)
+```
+
+Keep DMA `min` comfortably above ~15-20 KB. The weather client logs why a fetch fails (HTTP status, truncated body, missing field, out of memory), and `Radio start requested by:` shows whether the screen, the web page, or the alarm started the radio.
 
 ## Notes
 

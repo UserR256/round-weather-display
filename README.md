@@ -24,6 +24,13 @@ You can build it with a Raspberry Pi and round HDMI touchscreen, or use the Wave
 - Settings and WiFi setup from the touchscreen
 - Automatic startup when you power it on
 
+ESP32-P4 only:
+
+- An alarm with a beep or internet radio, with volume control on the screen
+- Internet radio with your own station list, picked from a search by country or name, or added as a stream URL
+- A web page on the clock with Messages, Settings, and Radio tabs, so you don't have to type on the round screen
+- English or Dutch on the clock
+
 ## 🖥 Hardware
 
 There are two ways to build this. Choose the hardware you're using, then follow its setup instructions below.
@@ -50,6 +57,8 @@ Additional supplies for the **Raspberry Pi Zero 2 W**:
 - A computer to install the software from your browser
 
 The ESP32-P4 version is built for the **Waveshare ESP32-P4-WIFI6-Touch-LCD-3.4C**, with an 800×800 round touchscreen. The board and display are one unit, so this version doesn't need a Raspberry Pi.
+
+Recent boards ship with an ESP32-P4 **chip revision v3.x**; the firmware now targets v3.x by default. The boot log shows the revision (`chip revision: v3.2`). See [targets/esp32-p4/README.md](targets/esp32-p4/README.md) if you have an older v1.x board.
 
 ### 3D Printed Cases
 
@@ -100,6 +109,8 @@ You can install this version straight from your browser. Use Chrome, Edge, or Fi
 
 For updates, plug the board back into your computer and use the same installer. Wireless updates aren't available yet.
 
+> **Note:** the firmware in the browser installer is still built for chip revision v1.x. On a v3.x board it won't install ("requires chip revision in range [v1.0 - v1.99]"). Until the installer is updated, build and flash from source; see [targets/esp32-p4/README.md](targets/esp32-p4/README.md).
+
 ## Using the Clock
 
 Your chosen clock face is the home screen. Everything else is one or two swipes away from it:
@@ -112,6 +123,8 @@ Your chosen clock face is the home screen. Everything else is one or two swipes 
 | Messages | Swipe left | Return to the clock |
 | Clock | Swipe down | Open Settings |
 | Settings | Swipe up, or tap Cancel | Return to the clock |
+| Conditions (ESP32-P4) | Swipe left | Open the radio |
+| Radio | Swipe right | Go back to the weather |
 
 Tap an unread message to mark it read and return to the clock.
 
@@ -123,9 +136,17 @@ When strong gusts, high winds, thunderstorms, heavy rain or snow, or a sharp pre
 
 ### Settings
 
-Swipe down from the clock to change the weather location, room name, device ID, house messages, clock face, time format, units, and nightshift. Tap **Wi-Fi** to pick a network. **Save & Restart** applies your changes. The Pi and ESP32-P4 have the same settings screen.
+Swipe down from the clock to change the weather location, room name, device ID, house messages, clock face, time format, units, and nightshift. Tap **Wi-Fi** to pick a network. **Save & Restart** applies your changes. The Pi and ESP32-P4 have the same settings screen. On the ESP32-P4 it also has **Language** and **Alarm Settings**.
+
+On the ESP32-P4 you can change the same settings from your phone or computer on the clock's web page (see [The clock's web page](#-the-clocks-web-page-esp32-p4)). Wi-Fi is only changed on the clock itself, so you can't lock yourself out.
 
 On the Pi, the WiFi screen also opens automatically when the clock loses its connection.
+
+### Alarm and radio (ESP32-P4)
+
+Set the alarm under **Settings → Alarm Settings** or on the web page: a time, on/off, and a beep or the radio. A radio alarm plays the station selected on the radio screen; if the stream can't be reached, it falls back to the beep. Swipe left past the conditions screen to reach the radio, where you can start and stop it and step through your stations. The volume arc sets the volume for both the radio and the alarm.
+
+The station list starts with a few Dutch stations. Edit it on the web page's **Radio** tab: search by country (pick only a country for its most popular stations) or by name via [radio-browser.info](https://www.radio-browser.info/), paste a stream URL, reorder, test on the clock, and **Save list**. Up to 16 stations; only MP3 streams play, and playlist links (`.m3u`, `.pls`) or HLS (`.m3u8`) are refused.
 
 ## 💬 Household Messages
 
@@ -145,9 +166,21 @@ For example, if you named your Pi `bedroom-clock`, use `http://bedroom-clock.loc
 http://<device-ip>/
 ```
 
-Replace `<device-ip>` with the clock's IP address.
+Replace `<device-ip>` with the clock's IP address. Messages is the first tab of the clock's web page.
 
 If you have more than one clock, enable shared messaging during setup. Give each one a room name so it's easy to choose where a message goes. Pi and ESP32-P4 clocks can share messages with each other.
+
+## 🌐 The clock's web page (ESP32-P4)
+
+Open `http://<device-ip>/` in a browser on the same network. The page has three tabs:
+
+| Tab | What you can do |
+| --- | --- |
+| **Messages** | Send and clear household messages |
+| **Settings** | Room name, clock face, time format, language, location, units, nightshift with start and end time, house messages, device ID, plus the alarm and volume. Saving restarts the clock; the page waits until it's back. Alarm and volume apply straight away. |
+| **Radio** | Find, add, reorder, and test stations, then save the list |
+
+You can link to a tab directly: `http://<device-ip>/#settings` or `#radio`.
 
 ## ⚙️ Configuration
 
