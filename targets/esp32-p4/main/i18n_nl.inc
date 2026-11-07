@@ -154,6 +154,7 @@
   { "Alarm Settings", "Wekkerinstellingen" },
   { "Web Page", "Webpagina" },
   { "Scan with your phone camera", "Scan met de camera van je telefoon" },
+  { "Type this address in your browser", "Typ dit adres in je browser" },
   { "Not connected to Wi-Fi", "Niet verbonden met wifi" },
   { "or", "of" },
   { "Factory Reset", "Fabrieksinstellingen" },

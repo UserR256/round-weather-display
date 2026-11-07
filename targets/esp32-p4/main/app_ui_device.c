@@ -9,6 +9,15 @@
 #define DANGER      0xc62828
 #define QR_SIZE     220
 
+/* The QR code needs CONFIG_LV_USE_QRCODE=y (in sdkconfig.defaults). An older
+ * local sdkconfig may not have it yet: then the panel shows only the
+ * addresses, and the build still works. */
+#if defined(LV_USE_QRCODE) && LV_USE_QRCODE
+#define HAVE_QRCODE 1
+#else
+#define HAVE_QRCODE 0
+#endif
+
 static lv_obj_t *s_web_panel = NULL;
 static lv_obj_t *s_qr = NULL;
 static lv_obj_t *s_ip_label = NULL;
@@ -66,7 +75,11 @@ static void refresh_web_panel(void) {
 
   // The IP address works on every phone; the .local name not on all of them.
   const char *qr_text = connected ? ip_url : local_url;
+#if HAVE_QRCODE
   lv_qrcode_update(s_qr, qr_text, strlen(qr_text));
+#else
+  (void) qr_text;
+#endif
 
   lv_label_set_text(s_ip_label, connected ? ip_url : tr("Not connected to Wi-Fi"));
   lv_label_set_text(s_local_label, local_url);
@@ -90,6 +103,7 @@ static void create_web_panel(lv_obj_t *parent) {
   lv_label_set_text(s_hint_label, tr("Scan with your phone camera"));
   lv_obj_align(s_hint_label, LV_ALIGN_TOP_MID, 0, 46);
 
+#if HAVE_QRCODE
   s_qr = lv_qrcode_create(s_web_panel);
   lv_qrcode_set_size(s_qr, QR_SIZE);
   lv_qrcode_set_dark_color(s_qr, lv_color_black());
@@ -98,6 +112,9 @@ static void create_web_panel(lv_obj_t *parent) {
   lv_obj_set_style_border_color(s_qr, lv_color_white(), 0);
   lv_obj_set_style_border_width(s_qr, 10, 0);
   lv_obj_align(s_qr, LV_ALIGN_TOP_MID, 0, 80);
+#else
+  lv_label_set_text(s_hint_label, tr("Type this address in your browser"));
+#endif
 
   s_ip_label = make_label(s_web_panel, &lv_font_montserrat_24, lv_color_white());
   lv_obj_align(s_ip_label, LV_ALIGN_TOP_MID, 0, 330);
